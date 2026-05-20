@@ -72,43 +72,12 @@ with col_import:
     )
     if archivo:
         try:
-            if archivo.name.lower().endswith((".pdf", ".docx")):
-                df_imp, formato = parsear_archivo(archivo, archivo.name)
-                aviso_pago = df_imp["fecha_pago"].isna().all()
-                st.success(f"Importado formato **{formato}**: {len(df_imp)} períodos")
-                if aviso_pago:
-                    st.info("Completá la columna **Fecha de pago** en la tabla antes de calcular.")
-                st.session_state.filas = df_imp
-                st.session_state.resultado = None
-            else:
-                if archivo.name.lower().endswith(".csv"):
-                    df_imp = pd.read_csv(archivo)
-                else:
-                    df_imp = pd.read_excel(archivo)
-
-                # Normalizar nombres de columnas
-                df_imp.columns = [c.lower().strip().replace(" ", "_") for c in df_imp.columns]
-                mapa = {
-                    "período": "periodo", "periodo": "periodo",
-                    "capital": "capital", "dif._neta": "capital", "dif_neta": "capital",
-                    "fecha_desde": "fecha_desde", "desde": "fecha_desde", "intereses_desde": "fecha_desde",
-                    "fecha_pago": "fecha_pago", "pago": "fecha_pago",
-                }
-                df_imp = df_imp.rename(columns={c: mapa[c] for c in df_imp.columns if c in mapa})
-
-                for col in ["periodo", "capital", "fecha_desde", "fecha_pago"]:
-                    if col not in df_imp.columns:
-                        df_imp[col] = None
-
-                df_imp = df_imp[["periodo", "capital", "fecha_desde", "fecha_pago"]]
-                df_imp["capital"] = pd.to_numeric(df_imp["capital"], errors="coerce")
-                df_imp["fecha_desde"] = pd.to_datetime(df_imp["fecha_desde"], dayfirst=True, errors="coerce").dt.date
-                df_imp["fecha_pago"] = pd.to_datetime(df_imp["fecha_pago"], dayfirst=True, errors="coerce").dt.date
-                aviso_pago = False
-
+            df_imp, formato = parsear_archivo(archivo, archivo.name)
             st.session_state.filas = df_imp
             st.session_state.resultado = None
-            st.success(f"Importado: {len(df_imp)} períodos")
+            st.success(f"Importado formato **{formato}**: {len(df_imp)} períodos")
+            if df_imp["fecha_pago"].isna().all():
+                st.info("Completá la columna **Fecha de pago** en la tabla antes de calcular.")
         except Exception as e:
             st.error(f"Error al importar: {e}")
 

@@ -153,15 +153,93 @@ def parsear_jauregui(file) -> pd.DataFrame:
     return pd.DataFrame(filas)
 
 
+# ── Excel / CSV ───────────────────────────────────────────────────────────────
+
+def parsear_excel(file, csv: bool = False) -> pd.DataFrame:
+    """
+    Parsea Excel o CSV.
+    Soporta dos formatos:
+    - Jauregui Excel: Mes | Año | … | Dif.Neta  (columnas separadas)
+    - Estándar: columnas periodo, capital, fecha_desde, fecha_pago
+    """
+    df_raw = pd.read_csv(file, header=None) if csv else pd.read_excel(file, header=None)
+
+    if df_raw.empty:
+        raise ValueError("El archivo está vacío.")
+
+    first = df_raw.iloc[0].fillna("").astype(str).str.strip().str.lower().tolist()
+
+    # Detectar formato Jauregui: primera celda "mes" y hay columna "dif.neta"
+    es_jauregui = first[0] == "mes" and any(
+        "dif" in v and "neta" in v for v in first
+    )
+
+    if es_jauregui:
+        dif_idx = next(i for i, v in enumerate(first) if "dif" in v and "neta" in v)
+        filas = []
+        vistos = set()
+        for i in range(1, len(df_raw)):
+            row = df_raw.iloc[i]
+            mes_str = str(row.iloc[0]).strip()
+            if not mes_str.isdigit():
+                continue
+            try:
+                mes  = int(mes_str)
+                anio = int(float(str(row.iloc[1]).strip()))
+                cap  = _monto(str(row.iloc[dif_idx]))
+            except (ValueError, TypeError):
+                continue
+            if cap is None or cap <= 0:
+                continue
+            periodo = f"{mes:02d}/{anio}"
+            if periodo in vistos:      # saltar fila de totales con mismo período
+                continue
+            vistos.add(periodo)
+            filas.append({
+                "periodo":     periodo,
+                "capital":     cap,
+                "fecha_desde": primer_dia_mes_siguiente(periodo),
+                "fecha_pago":  None,
+            })
+        if not filas:
+            raise ValueError("No se encontraron datos válidos en el Excel Jauregui.")
+        return pd.DataFrame(filas)
+
+    # Formato estándar: primera fila como encabezado
+    df = df_raw.copy()
+    df.columns = df.iloc[0].fillna("").astype(str).str.lower().str.strip().str.replace(" ", "_")
+    df = df.iloc[1:].reset_index(drop=True)
+    mapa = {
+        "período": "periodo", "periodo": "periodo",
+        "capital": "capital",
+        "dif._neta": "capital", "dif_neta": "capital", "dif.neta": "capital",
+        "fecha_desde": "fecha_desde", "desde": "fecha_desde", "intereses_desde": "fecha_desde",
+        "fecha_pago": "fecha_pago", "pago": "fecha_pago",
+    }
+    df = df.rename(columns={c: mapa[c] for c in df.columns if c in mapa})
+    for col in ["periodo", "capital", "fecha_desde", "fecha_pago"]:
+        if col not in df.columns:
+            df[col] = None
+    df = df[["periodo", "capital", "fecha_desde", "fecha_pago"]]
+    df["capital"]     = pd.to_numeric(df["capital"], errors="coerce")
+    df["fecha_desde"] = pd.to_datetime(df["fecha_desde"], dayfirst=True, errors="coerce").dt.date
+    df["fecha_pago"]  = pd.to_datetime(df["fecha_pago"],  dayfirst=True, errors="coerce").dt.date
+    return df.dropna(subset=["periodo", "capital"])
+
+
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
 def parsear_archivo(file, filename: str) -> tuple[pd.DataFrame, str]:
-    """
-    Detecta el formato y parsea. Devuelve (df, nombre_formato).
-    """
-    ext = filename.lower().rsplit('.', 1)[-1]
-    if ext == 'pdf':
+    """Detecta el formato y parsea. Devuelve (df, nombre_formato)."""
+    ext = filename.lower().rsplit(".", 1)[-1]
+    if ext == "pdf":
         return parsear_bluecorp(file), "BlueCorp"
-    if ext == 'docx':
+    if ext == "docx":
         return parsear_jauregui(file), "Jauregui"
-    raise ValueError(f"Formato no soportado: .{ext}. Usá PDF (BlueCorp) o DOCX (Jauregui).")
+    if ext in ("xlsx", "xls"):
+        df = parsear_excel(file, csv=False)
+        return df, "Excel Jauregui" if len(df) > 0 else "Excel"
+    if ext == "csv":
+        df = parsear_excel(file, csv=True)
+        return df, "CSV"
+    raise ValueError(f"Formato no soportado: .{ext}")
