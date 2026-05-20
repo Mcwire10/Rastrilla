@@ -7,7 +7,7 @@ import streamlit as st
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_intereses, primer_dia_mes_siguiente
 from exportar import exportar_excel, exportar_pdf
-from parsear_pdf import parsear_pdf
+from parsear_pdf import parsear_archivo
 
 st.set_page_config(
     page_title="Intereses Moratorios · RASTRILLA",
@@ -66,19 +66,20 @@ st.subheader("1. Cargar datos")
 col_import, col_auto = st.columns([2, 1])
 
 with col_import:
-    archivo = st.file_uploader("Importar Excel, CSV o PDF", type=["xlsx", "xls", "csv", "pdf"])
+    archivo = st.file_uploader(
+        "Importar Excel, CSV, PDF (BlueCorp) o DOCX (Jauregui)",
+        type=["xlsx", "xls", "csv", "pdf", "docx"],
+    )
     if archivo:
         try:
-            if archivo.name.lower().endswith(".pdf"):
-                df_imp = parsear_pdf(archivo)
-                # Auto-completar fecha_desde donde falte
-                for i, row in df_imp.iterrows():
-                    if pd.isna(row["fecha_desde"]) and pd.notna(row["periodo"]):
-                        try:
-                            df_imp.at[i, "fecha_desde"] = primer_dia_mes_siguiente(str(row["periodo"]))
-                        except Exception:
-                            pass
+            if archivo.name.lower().endswith((".pdf", ".docx")):
+                df_imp, formato = parsear_archivo(archivo, archivo.name)
                 aviso_pago = df_imp["fecha_pago"].isna().all()
+                st.success(f"Importado formato **{formato}**: {len(df_imp)} períodos")
+                if aviso_pago:
+                    st.info("Completá la columna **Fecha de pago** en la tabla antes de calcular.")
+                st.session_state.filas = df_imp
+                st.session_state.resultado = None
             else:
                 if archivo.name.lower().endswith(".csv"):
                     df_imp = pd.read_csv(archivo)
@@ -108,8 +109,6 @@ with col_import:
             st.session_state.filas = df_imp
             st.session_state.resultado = None
             st.success(f"Importado: {len(df_imp)} períodos")
-            if aviso_pago:
-                st.info("Completá la columna **Fecha de pago** en la tabla antes de calcular.")
         except Exception as e:
             st.error(f"Error al importar: {e}")
 
