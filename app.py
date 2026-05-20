@@ -51,10 +51,13 @@ Fórmula: `Capital × (Índice_final / Índice_inicial − 1)`
 
 # ── Estado de sesión ────────────────────────────────────────────────────────
 if "filas" not in st.session_state:
-    st.session_state.filas = pd.DataFrame(columns=["periodo", "capital", "fecha_desde", "fecha_pago"])
+    st.session_state.filas = pd.DataFrame(columns=["periodo", "capital", "fecha_desde"])
 
 if "resultado" not in st.session_state:
     st.session_state.resultado = None
+
+if "fecha_hasta" not in st.session_state:
+    st.session_state.fecha_hasta = date.today()
 
 # ── Título ──────────────────────────────────────────────────────────────────
 st.title("⚖️ Intereses Moratorios — Doctrina RASTRILLA")
@@ -73,11 +76,12 @@ with col_import:
     if archivo:
         try:
             df_imp, formato = parsear_archivo(archivo, archivo.name)
-            st.session_state.filas = df_imp
+            # Si el documento trae fecha sugerida, pre-llenar Fecha hasta
+            if "fecha_pago" in df_imp.columns and df_imp["fecha_pago"].notna().any():
+                st.session_state.fecha_hasta = df_imp["fecha_pago"].dropna().iloc[0]
+            st.session_state.filas = df_imp[["periodo", "capital", "fecha_desde"]].copy()
             st.session_state.resultado = None
             st.success(f"Importado formato **{formato}**: {len(df_imp)} períodos")
-            if df_imp["fecha_pago"].isna().all():
-                st.info("Completá la columna **Fecha de pago** en la tabla antes de calcular.")
         except Exception as e:
             st.error(f"Error al importar: {e}")
 
@@ -94,6 +98,13 @@ with col_auto:
                     pass
         st.session_state.filas = df
         st.rerun()
+
+# ── Fecha hasta ──────────────────────────────────────────────────────────────
+st.session_state.fecha_hasta = st.date_input(
+    "Fecha hasta (fecha efectiva de pago — se aplica a toda la liquidación)",
+    value=st.session_state.fecha_hasta,
+    format="DD/MM/YYYY",
+)
 
 # ── Tabla editable ───────────────────────────────────────────────────────────
 st.markdown("**Tabla de períodos** — editá directamente o importá desde Excel/CSV")
@@ -119,11 +130,6 @@ df_editor = st.data_editor(
             format="DD/MM/YYYY",
             width="medium",
         ),
-        "fecha_pago": st.column_config.DateColumn(
-            "Fecha de pago",
-            format="DD/MM/YYYY",
-            width="medium",
-        ),
     },
     key="editor_filas",
 )
@@ -136,7 +142,8 @@ if st.button("▶ Calcular intereses moratorios", type="primary", use_container_
     if indice is None:
         st.error("El índice BCRA no está disponible.")
     else:
-        df = st.session_state.filas.dropna(subset=["periodo", "capital", "fecha_desde", "fecha_pago"])
+        df = st.session_state.filas.dropna(subset=["periodo", "capital", "fecha_desde"]).copy()
+        df["fecha_pago"] = pd.Timestamp(st.session_state.fecha_hasta)
         if df.empty:
             st.warning("No hay filas completas para calcular.")
         else:
