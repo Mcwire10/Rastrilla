@@ -16,15 +16,18 @@ def calcular_fila(
     fecha_pago: pd.Timestamp,
     indice: pd.Series,
 ) -> dict:
-    idx_inicial = indice.asof(fecha_desde)
-    idx_final = indice.asof(fecha_pago)
+    # T0 = día anterior a fecha_desde (BCRA Res. 45/26, art. 55 Ley 27.802, sección C)
+    t0_fecha = pd.Timestamp(fecha_desde) - pd.Timedelta(days=1)
+    idx_inicial = indice.asof(t0_fecha)
+    idx_final = indice.asof(pd.Timestamp(fecha_pago))
 
     if pd.isna(idx_inicial):
-        return {"error": f"Sin índice para fecha {fecha_desde.strftime('%d/%m/%Y')}"}
+        return {"error": f"Sin índice para fecha {t0_fecha.strftime('%d/%m/%Y')}"}
     if pd.isna(idx_final):
-        return {"error": f"Sin índice para fecha {fecha_pago.strftime('%d/%m/%Y')}"}
+        return {"error": f"Sin índice para fecha {pd.Timestamp(fecha_pago).strftime('%d/%m/%Y')}"}
 
-    coeficiente = (idx_final / idx_inicial) - 1
+    # i = ((100 + Tm) / (100 + T0) - 1)  — Metodología BCRA Res. 45/26
+    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
     interes = round(capital * coeficiente, 2)
     total = round(capital + interes, 2)
 

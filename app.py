@@ -46,7 +46,9 @@ with st.sidebar:
 **Doctrina RASTRILLA**
 Cada mensualidad es una obligación independiente.
 Intereses desde: 1° del mes siguiente.
-Fórmula: `Capital × (Índice_final / Índice_inicial − 1)`
+Fórmula: `Capital × ((100 + T_m) / (100 + T_0) − 1)`
+T_0 = índice del día anterior al inicio · T_m = índice al día de pago
+*(BCRA Res. 45/26 · Ley 27.802 art. 55)*
 """)
 
 # ── Estado de sesión ────────────────────────────────────────────────────────
