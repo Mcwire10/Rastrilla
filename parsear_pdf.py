@@ -136,14 +136,20 @@ def parsear_jauregui(file) -> pd.DataFrame:
     if not nested:
         raise ValueError("No se encontró tabla de datos en el DOCX Jauregui.")
 
+    vistos = set()
     for row_el in nested[0].findall('.//' + qn('w:tr')):
         cells = row_el.findall('.//' + qn('w:tc'))
         vals = [''.join(t.text or '' for t in tc.findall('.//' + qn('w:t'))).strip()
                 for tc in cells]
-        if len(vals) < 12:
+        if len(vals) < 8:
             continue
-        f = _fila(vals[0], vals[1], vals[11])
+        # vals[7] = "Difer." (diferencia bruta mensual, sin SAC ni OS)
+        # vals[11] = "Dif.Neta" (incluye SAC — no se usa)
+        f = _fila(vals[0], vals[1], vals[7])
         if f:
+            if f["periodo"] in vistos:   # saltar fila de totales con mismo período
+                continue
+            vistos.add(f["periodo"])
             f["fecha_pago"] = fecha_pago
             filas.append(f)
 
