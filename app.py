@@ -4,6 +4,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from auth import get_session_user, init_db, logout, render_login
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_intereses, primer_dia_mes_siguiente
 from exportar import exportar_excel, exportar_pdf
@@ -15,8 +16,19 @@ st.set_page_config(
     layout="wide",
 )
 
+init_db()
+
+usuario = get_session_user()
+if usuario is None:
+    render_login()
+    st.stop()
+
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
+    st.caption(f"👤 {usuario['nombre']}  `{usuario['rol']}`")
+    if st.button("Cerrar sesión", use_container_width=True):
+        logout()
+    st.divider()
     st.header("Índice BCRA")
     st.caption("Com. 14290 · Uso de la Justicia")
 
