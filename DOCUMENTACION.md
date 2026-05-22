@@ -219,7 +219,7 @@ Capital = Haber Reajustado − Haber Percibido
 
 | Extensión | Sistema | Capital leído |
 |---|---|---|
-| `.pdf` | BlueCorp / Ius Asociados | col[3] − col[2] = Reajustado − Percibido |
+| `.pdf` | BlueCorp | col[3] − col[2] = Reajustado − Percibido |
 | `.docx` | Jauregui | col[3] − col[2] = Reajustado − Percibido |
 | `.xlsx` / `.xls` | Jauregui | col[Reajustado] − col[Percibido] (detectado por nombre) |
 | `.csv` | Estándar | columnas `periodo`, `capital`, `fecha_desde` |

@@ -1,6 +1,6 @@
 """
 Parsers específicos para cada formato de planilla de liquidación.
-- parsear_bluecorp : PDF generado por BlueCorp / Ius Asociados
+- parsear_bluecorp : PDF generado por BlueCorp
 - parsear_jauregui : DOCX generado por Sistema Jauregui
 - parsear_excel    : Excel o CSV (formato Jauregui o estándar)
 """
@@ -98,7 +98,7 @@ def _fila_diff(mes_str, anio_str, percibido_str, reajustado_str) -> dict | None:
 
 def parsear_bluecorp(file) -> pd.DataFrame:
     """
-    PDF BlueCorp / Ius Asociados — sin límite de páginas.
+    PDF BlueCorp — sin límite de páginas.
 
     Estructura de columnas (pdfplumber, 12 cols):
       [0] Mes  [1] Año  [2] Haber Percibido  [3] Haber Reclamado/Reajustado
@@ -135,7 +135,7 @@ def parsear_bluecorp(file) -> pd.DataFrame:
     if not filas:
         raise ValueError(
             "No se encontraron datos en el PDF BlueCorp.\n"
-            "Verificá que el archivo sea una liquidación BlueCorp / Ius Asociados."
+            "Verificá que el archivo sea una liquidación BlueCorp."
         )
     return pd.DataFrame(filas)
 
