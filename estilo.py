@@ -229,6 +229,13 @@ body:has(.login-bg-panel) [data-testid="stBottom"] {
     border-color: rgba(255, 255, 255, 0.6) !important;
     color: #052e16 !important;
 }
+/* Los <p> y <span> dentro del botón heredan el verde claro del sidebar —
+   necesitan sobreescritura explícita para mantener texto oscuro sobre blanco */
+[data-testid="stSidebar"] .stButton > button p,
+[data-testid="stSidebar"] .stButton > button span,
+[data-testid="stSidebar"] .stButton > button div {
+    color: #052e16 !important;
+}
 
 /* Logo brand — st.page_link al tope del sidebar */
 [data-testid="stSidebar"] [data-testid="stPageLink"] a {
