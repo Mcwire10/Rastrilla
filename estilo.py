@@ -14,8 +14,8 @@ _CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
 /* ── Tipografía global — Outfit (taste-skill: Inter banned) ─────────────────── */
-html, body, button, input, textarea, select,
-[class*="css"], .stMarkdown, p, span, li {
+/* IMPORTANT: do NOT include button/span/svg here — breaks Material Symbols icons */
+body, input, textarea, select, p, li, .stMarkdown {
     font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
 }
 
@@ -210,18 +210,18 @@ body:has(.login-bg-panel) [data-testid="stBottom"] {
     fill: #14532d !important;
 }
 
-/* Botones del sidebar */
+/* Botones del sidebar — blancos sobre verde oscuro */
 [data-testid="stSidebar"] .stButton > button {
-    background: transparent !important;
-    border: 1px solid rgba(74, 222, 128, 0.4) !important;
-    color: #dcfce7 !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    color: #14532d !important;
     border-radius: 6px !important;
-    font-weight: 500 !important;
+    font-weight: 600 !important;
     transition: background 0.15s ease, border-color 0.15s ease !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover {
-    background: rgba(74, 222, 128, 0.1) !important;
-    border-color: #86efac !important;
+    background: #ffffff !important;
+    border-color: rgba(255, 255, 255, 0.6) !important;
 }
 
 

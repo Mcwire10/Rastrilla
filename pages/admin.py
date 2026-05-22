@@ -1,39 +1,16 @@
 """
-Panel de administración — Suscripciones y usuarios RASTRILLA
-Solo accesible para usuarios con rol 'admin'.
+admin.py — Panel de administración
+El router (app.py) ya hizo auth guard; aquí solo comprobamos rol admin.
 """
 from datetime import date
 
-import pandas as pd
 import streamlit as st
 
-from estilo import aplicar_estilos
-from auth import (
-    create_user,
-    get_session_user,
-    init_db,
-    list_users,
-    registrar_pago,
-    render_login,
-    set_bloqueado,
-)
+from auth import create_user, list_users, registrar_pago, set_bloqueado
 
-st.set_page_config(
-    page_title="Admin · Rake",
-    page_icon="🔧",
-    layout="wide",
-)
+usuario = st.session_state.get("usuario")
 
-init_db()
-aplicar_estilos()
-
-# ── Auth guard ────────────────────────────────────────────────────────────────
-usuario = get_session_user()
-if usuario is None:
-    render_login()
-    st.stop()
-
-if usuario["rol"] != "admin":
+if usuario is None or usuario["rol"] != "admin":
     st.error("⛔ Acceso denegado. Esta sección es solo para administradores.")
     st.stop()
 
@@ -103,7 +80,6 @@ for u in usuarios:
                         "🔒 Bloquear",
                         key=f"blq_{u['username']}",
                         use_container_width=True,
-                        type="primary" if not u["bloqueado"] else "secondary",
                     ):
                         set_bloqueado(u["username"], True)
                         st.warning("Cuenta bloqueada.")
