@@ -12,7 +12,7 @@ from estilo import aplicar_estilos
 from parsear_pdf import parsear_archivo
 
 st.set_page_config(
-    page_title="Intereses Moratorios · RASTRILLA",
+    page_title="Intereses Moratorios · Rake",
     page_icon="⚖️",
     layout="wide",
 )
@@ -55,15 +55,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error al descargar: {e}")
 
-    st.divider()
-    st.markdown("""
-**Doctrina RASTRILLA**
-Cada mensualidad es una obligación independiente.
-Intereses desde: 1° del mes siguiente.
-Fórmula: `Capital × ((100 + T_m) / (100 + T_0) − 1)`
-T_0 = índice del día anterior al inicio · T_m = índice al día de pago
-*(BCRA Res. 45/26 · Ley 27.802 art. 55)*
-""")
 
 # ── Estado de sesión ────────────────────────────────────────────────────────
 if "filas" not in st.session_state:
@@ -76,8 +67,7 @@ if "fecha_hasta" not in st.session_state:
     st.session_state.fecha_hasta = date.today()
 
 # ── Título ──────────────────────────────────────────────────────────────────
-st.title("⚖️ Intereses Moratorios — Doctrina RASTRILLA")
-st.caption("Tasa pasiva BCRA Com. 14290 · Cálculo por coeficiente acumulado")
+st.title("⚖️ Intereses Moratorios")
 
 # ── Importar Excel / CSV ─────────────────────────────────────────────────────
 st.subheader("1. Cargar datos")
@@ -215,7 +205,7 @@ if st.session_state.resultado is not None:
             st.download_button(
                 "⬇ Descargar Excel",
                 data=xlsx_bytes,
-                file_name="liquidacion_rastrilla.xlsx",
+                file_name="liquidacion_rake.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
@@ -225,7 +215,7 @@ if st.session_state.resultado is not None:
             st.download_button(
                 "⬇ Descargar PDF",
                 data=pdf_bytes,
-                file_name="liquidacion_rastrilla.pdf",
+                file_name="liquidacion_rake.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             )

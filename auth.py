@@ -174,7 +174,7 @@ def render_login() -> None:
         st.markdown("""
 <div style="text-align:center; padding-bottom:1.75rem;">
   <div style="font-size:2.25rem; font-weight:800; letter-spacing:-0.03em; color:#14532d; line-height:1.1;">
-    ⚖️ RASTRILLA
+    ⚖️ Rake
   </div>
   <div style="color:#6b7280; font-size:0.875rem; margin-top:0.4rem; font-weight:500;">
     Intereses Moratorios · Uso Interno

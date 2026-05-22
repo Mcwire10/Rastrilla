@@ -19,7 +19,7 @@ from auth import (
 )
 
 st.set_page_config(
-    page_title="Admin · RASTRILLA",
+    page_title="Admin · Rake",
     page_icon="🔧",
     layout="wide",
 )
