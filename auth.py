@@ -187,7 +187,7 @@ def render_login() -> None:
     # Dos columnas: izquierda vacía (cubierta por el panel fijo), derecha el form
     _, col = st.columns([1, 1])
     with col:
-        st.markdown("<div style='height:22vh'></div>", unsafe_allow_html=True)
+        st.markdown("<div class='login-spacer'></div>", unsafe_allow_html=True)
         st.markdown("""
 <div class="login-form-area">
   <p class="login-form-heading">Bienvenido</p>

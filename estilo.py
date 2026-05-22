@@ -109,6 +109,11 @@ body:has(.login-bg-panel) [data-testid="stBottom"] {
     font-family: 'Outfit', sans-serif;
 }
 
+/* Espaciador vertical antes del formulario (desktop = 22vh, se sobreescribe en mobile) */
+.login-spacer {
+    height: 22vh;
+}
+
 /* Header del formulario — derecha */
 .login-form-area {
     position: relative;
@@ -372,6 +377,96 @@ h3 {
 }
 [data-theme="dark"] [data-testid="stSidebar"] {
     background-color: #0f1f14 !important;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/*  RESPONSIVE — login split-screen adaptable a todos los dispositivos           */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Tablet (768–1023 px) — split-screen pero compacto ──────────────────────── */
+@media (max-width: 1023px) {
+    .login-brand-name {
+        font-size: 4rem !important;
+    }
+    .login-bg-panel {
+        padding: 0 2.5rem !important;
+    }
+}
+
+/* ── Mobile (< 768 px) — layout apilado vertical ────────────────────────────── */
+@media (max-width: 767px) {
+    /* Sin gradiente partido — fondo blanco limpio */
+    body:has(.login-bg-panel) {
+        background: #f9fafb !important;
+    }
+
+    /* Panel de marca: de posición fixed lateral → banner superior en flujo normal */
+    .login-bg-panel {
+        position: relative !important;
+        top: unset !important;
+        left: unset !important;
+        width: 100% !important;
+        height: auto !important;
+        background: #14532d !important;
+        padding: 2rem 1.5rem 1.75rem !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        pointer-events: auto !important;
+        z-index: auto !important;
+    }
+
+    /* Mobile: solo eyebrow + nombre — ocultar descripción y tag */
+    .login-brand-desc,
+    .login-brand-tag {
+        display: none !important;
+    }
+    .login-brand-eyebrow {
+        margin-bottom: 0.75rem !important;
+    }
+    .login-brand-name {
+        font-size: 3.25rem !important;
+        margin-bottom: 0 !important;
+    }
+
+    /* Espaciador antes del form: reducir de 22vh a 1.5rem */
+    .login-spacer {
+        height: 1.5rem !important;
+    }
+
+    /* Columna izquierda vacía (placeholder del panel fixed) → colapsar */
+    body:has(.login-bg-panel) [data-testid="stColumn"]:first-child {
+        display: none !important;
+        flex: 0 0 0 !important;
+        min-width: 0 !important;
+        max-width: 0 !important;
+    }
+
+    /* Columna del formulario → ancho completo con respiración lateral */
+    body:has(.login-bg-panel) [data-testid="stColumn"]:last-child {
+        min-width: 100% !important;
+        max-width: 100% !important;
+        flex: 1 1 100% !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Sin padding cero en el contenedor principal — dejar que el panel fluya */
+    body:has(.login-bg-panel) [data-testid="stMainBlockContainer"] {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+}
+
+/* ── Responsive general (app) — métricas en mobile ──────────────────────────── */
+@media (max-width: 600px) {
+    /* Las 3 métricas de totales pueden ser un poco más compactas */
+    [data-testid="stMetric"] {
+        padding: 0.75rem 0.875rem !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-size: 1.1rem !important;
+    }
 }
 </style>
 """
