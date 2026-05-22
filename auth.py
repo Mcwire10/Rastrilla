@@ -167,22 +167,35 @@ def logout() -> None:
 # ── UI de login ───────────────────────────────────────────────────────────────
 
 def render_login() -> None:
-    """Muestra el formulario de login. El caller debe llamar st.stop() después."""
-    st.markdown("<div style='height:7vh'></div>", unsafe_allow_html=True)
-    col = st.columns([1, 1.4, 1])[1]
+    """
+    Login split-screen (DESIGN_VARIANCE: 8).
+    Panel verde fijo izquierda + formulario derecha.
+    El caller debe llamar st.stop() después.
+    """
+    # Panel de marca fijo — posicionado via CSS sobre la mitad izquierda
+    st.markdown("""
+<div class="login-bg-panel" aria-hidden="true">
+  <div class="login-brand-eyebrow">Sistema de liquidación</div>
+  <div class="login-brand-name">Rake</div>
+  <div class="login-brand-desc">
+    Intereses moratorios<br>por reajuste previsional
+  </div>
+  <div class="login-brand-tag">Uso interno · Estudio jurídico</div>
+</div>
+""", unsafe_allow_html=True)
+
+    # Dos columnas: izquierda vacía (cubierta por el panel fijo), derecha el form
+    _, col = st.columns([1, 1])
     with col:
+        st.markdown("<div style='height:22vh'></div>", unsafe_allow_html=True)
         st.markdown("""
-<div style="text-align:center; padding-bottom:1.75rem;">
-  <div style="font-size:2.25rem; font-weight:800; letter-spacing:-0.03em; color:#14532d; line-height:1.1;">
-    ⚖️ Rake
-  </div>
-  <div style="color:#6b7280; font-size:0.875rem; margin-top:0.4rem; font-weight:500;">
-    Intereses Moratorios · Uso Interno
-  </div>
+<div class="login-form-area">
+  <p class="login-form-heading">Bienvenido</p>
+  <p class="login-form-sub">Ingresá con tu cuenta para continuar</p>
 </div>
 """, unsafe_allow_html=True)
         with st.form("login_form"):
-            username = st.text_input("Usuario", placeholder="tu_usuario")
+            username = st.text_input("Usuario", placeholder="usuario")
             password = st.text_input("Contraseña", type="password", placeholder="••••••••")
             submitted = st.form_submit_button(
                 "Ingresar", use_container_width=True, type="primary"
