@@ -219,7 +219,7 @@ body:has(.login-bg-panel) [data-testid="stBottom"] {
 [data-testid="stSidebar"] .stButton > button {
     background: rgba(255, 255, 255, 0.92) !important;
     border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    color: #14532d !important;
+    color: #052e16 !important;
     border-radius: 6px !important;
     font-weight: 600 !important;
     transition: background 0.15s ease, border-color 0.15s ease !important;
@@ -227,6 +227,33 @@ body:has(.login-bg-panel) [data-testid="stBottom"] {
 [data-testid="stSidebar"] .stButton > button:hover {
     background: #ffffff !important;
     border-color: rgba(255, 255, 255, 0.6) !important;
+    color: #052e16 !important;
+}
+
+/* Logo brand — st.page_link al tope del sidebar */
+[data-testid="stSidebar"] [data-testid="stPageLink"] a {
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.04em !important;
+    color: #f0fdf4 !important;
+    background: transparent !important;
+    border-radius: 8px !important;
+    padding: 0.3rem 0.5rem !important;
+    text-decoration: none !important;
+    transition: color 0.18s ease, background 0.18s ease !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.4rem !important;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink"] a:hover {
+    color: #86efac !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+}
+/* Suprimir el highlight de "página activa" en el logo */
+[data-testid="stSidebar"] [data-testid="stPageLink"] a[aria-current],
+[data-testid="stSidebar"] [data-testid="stPageLink"] a[data-active="true"] {
+    background: transparent !important;
+    color: #4ade80 !important;
 }
 
 

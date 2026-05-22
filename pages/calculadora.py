@@ -15,6 +15,7 @@ from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
+    st.divider()
     st.markdown("**Índice BCRA**")
     st.caption("Com. 14290 · Uso de la Justicia")
 

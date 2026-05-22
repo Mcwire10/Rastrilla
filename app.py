@@ -1,6 +1,6 @@
 """
 app.py — Router principal de Rake
-Gestiona auth, estilos, navegación por rol y sidebar footer.
+Gestiona auth, estilos, navegación por rol y sidebar.
 """
 import streamlit as st
 
@@ -31,32 +31,30 @@ if usuario["rol"] == "admin":
 
 pg = st.navigation(pages, position="hidden")
 
-# ── Sidebar footer — usuario + engranaje + cerrar sesión ─────────────────────
-# Se añade DESPUÉS de pg.run() para que aparezca al final del sidebar,
-# debajo del contenido que cada página agrega (ej: índice BCRA en calculadora).
+# ── Logo — tope del sidebar, siempre visible, click = volver a home ───────────
+with st.sidebar:
+    st.page_link("pages/calculadora.py", label="Rake", icon="⚖️")
 
+# ── Contenido de la página activa (calculadora agrega sección BCRA al sidebar) ─
 pg.run()
 
+# ── Sidebar: navegación + footer ──────────────────────────────────────────────
 with st.sidebar:
     st.divider()
 
+    # Botón de admin solo para el rol admin
+    if usuario["rol"] == "admin":
+        if st.button("🔧 Administración", key="btn_admin", use_container_width=True):
+            st.switch_page("pages/admin.py")
+
+    # Botón siempre visible para volver a la calculadora (útil desde admin)
+    if st.button("📊 Calculadora", key="btn_calc", use_container_width=True):
+        st.switch_page("pages/calculadora.py")
+
+    st.divider()
+
     nombre_corto = usuario["nombre"].split()[0]
-    col_nombre, col_gear, col_out = st.columns([5, 1, 1])
+    st.caption(f"👤 {nombre_corto} · {usuario['rol']}")
 
-    with col_nombre:
-        st.markdown(
-            f"<p style='color:#dcfce7;font-weight:600;font-size:0.875rem;"
-            f"margin:0;line-height:1.3'>{nombre_corto}</p>"
-            f"<p style='color:rgba(187,247,208,0.55);font-size:0.7rem;"
-            f"margin:0'>{usuario['rol']}</p>",
-            unsafe_allow_html=True,
-        )
-
-    with col_gear:
-        if usuario["rol"] == "admin":
-            if st.button("⚙️", key="btn_admin", help="Panel de administración"):
-                st.switch_page("pages/admin.py")
-
-    with col_out:
-        if st.button("↩", key="btn_logout", help="Cerrar sesión"):
-            logout()
+    if st.button("Cerrar sesión", key="btn_logout", use_container_width=True):
+        logout()
