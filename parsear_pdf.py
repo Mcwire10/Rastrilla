@@ -171,13 +171,21 @@ def parsear_excel(file, csv: bool = False) -> pd.DataFrame:
 
     first = df_raw.iloc[0].fillna("").astype(str).str.strip().str.lower().tolist()
 
-    # Detectar formato Jauregui: primera celda "mes" y hay columna "dif.neta"
+    # Detectar formato Jauregui: primera celda "mes" y hay columna "Difer." o "Dif.Neta"
     es_jauregui = first[0] == "mes" and any(
-        "dif" in v and "neta" in v for v in first
+        v.startswith("difer") or ("dif" in v and "neta" in v) for v in first if v
     )
 
     if es_jauregui:
-        dif_idx = next(i for i, v in enumerate(first) if "dif" in v and "neta" in v)
+        # Preferir "Difer." (diferencia bruta mensual, sin SAC ni OS)
+        # Si no existe, usar "Dif.Neta" como fallback
+        try:
+            dif_idx = next(
+                i for i, v in enumerate(first)
+                if v.startswith("difer") and "neta" not in v
+            )
+        except StopIteration:
+            dif_idx = next(i for i, v in enumerate(first) if "dif" in v and "neta" in v)
         filas = []
         vistos = set()
         for i in range(1, len(df_raw)):
