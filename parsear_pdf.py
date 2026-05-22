@@ -85,9 +85,11 @@ def parsear_bluecorp(file) -> pd.DataFrame:
             raise ValueError("No se encontró tabla en la página 2 del PDF.")
 
         for row in tables[0]:
-            if not row or len(row) < 3:
+            if not row or len(row) < 7:
                 continue
-            f = _fila(row[0], row[1], row[-2])
+            # col[6] = "Diferencia - Deducción" (diferencia bruta mensual, sin OS ni HAC)
+            # col[-2] = "Capital" (incluye HAC semestral — no se usa)
+            f = _fila(row[0], row[1], row[6])
             if f:
                 f["fecha_pago"] = fecha_pago
                 filas.append(f)
