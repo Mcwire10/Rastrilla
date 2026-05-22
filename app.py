@@ -31,7 +31,7 @@ with st.sidebar:
     if st.button("Cerrar sesión", use_container_width=True):
         logout()
     st.divider()
-    st.header("Índice BCRA")
+    st.markdown("**Índice BCRA**")
     st.caption("Com. 14290 · Uso de la Justicia")
 
     @st.cache_resource(show_spinner="Cargando índice BCRA...")
