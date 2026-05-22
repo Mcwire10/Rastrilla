@@ -4,6 +4,7 @@ Parsers específicos para cada formato de planilla de liquidación.
 - parsear_jauregui : DOCX generado por Sistema Jauregui
 - parsear_excel    : Excel o CSV (formato Jauregui o estándar)
 """
+import io
 import re
 from datetime import date
 
@@ -300,13 +301,72 @@ def parsear_excel(file, csv: bool = False) -> pd.DataFrame:
     return df.dropna(subset=["periodo", "capital"])
 
 
+# ── Jauregui (PDF) ───────────────────────────────────────────────────────────
+
+def parsear_jauregui_pdf(file) -> pd.DataFrame:
+    """
+    PDF generado por el sistema Jauregui — sin límite de páginas.
+
+    Estructura de columnas (16 cols, pdfplumber):
+      [0] Mes  [1] Año  [2] Percibido  [3] Reajustado  [4] Tope
+      [5] %Conf  [6] Luego Tope  [7] Difer.  [8] Dif.Act.  [9] SAC
+      [10] Subtotal  [11] O.Social  [12] Dif.Neta  [13] Intereses
+      [14] Total  [15] Texto
+
+    Capital = col[3] (Reajustado) − col[2] (Percibido)
+
+    Fecha hasta: texto "hasta el DD/MM/YYYY" o "calcularon hasta el: DD/MM/YYYY"
+    La última fila es un total con col[2] vacío → se descarta automáticamente.
+    """
+    filas      = []
+    vistos     = set()
+    fecha_pago = None
+
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            texto = page.extract_text() or ""
+            if fecha_pago is None:
+                fecha_pago = (
+                    _fecha(texto, r'calcularon hasta el:\s*(\d{1,2}/\d{1,2}/\d{4})')
+                    or _fecha(texto, r'hasta el\s+(\d{1,2}/\d{1,2}/\d{4})')
+                )
+            for table in page.extract_tables():
+                for row in table:
+                    if not row or len(row) < 4:
+                        continue
+                    # Capital = Reajustado (col[3]) − Percibido (col[2])
+                    f = _fila_diff(row[0], row[1], row[2], row[3])
+                    if f and f["periodo"] not in vistos:
+                        vistos.add(f["periodo"])
+                        f["fecha_pago"] = fecha_pago
+                        filas.append(f)
+
+    if not filas:
+        raise ValueError(
+            "No se encontraron datos en el PDF Jauregui.\n"
+            "Verificá que el archivo sea una liquidación del Sistema Jauregui."
+        )
+    return pd.DataFrame(filas)
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
 def parsear_archivo(file, filename: str) -> tuple[pd.DataFrame, str]:
-    """Detecta el formato por extensión y parsea. Devuelve (df, nombre_formato)."""
+    """
+    Detecta el formato por extensión (y para PDF también por contenido).
+    Devuelve (df, nombre_formato).
+    """
     ext = filename.lower().rsplit(".", 1)[-1]
     if ext == "pdf":
-        return parsear_bluecorp(file), "BlueCorp"
+        # Leer contenido una sola vez para detectar el sistema y luego parsear
+        content = file.read()
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            txt_p1 = pdf.pages[0].extract_text() or ""
+        data = io.BytesIO(content)
+        if "bluecorp" in txt_p1.lower():
+            return parsear_bluecorp(data), "BlueCorp"
+        else:
+            return parsear_jauregui_pdf(data), "Jauregui PDF"
     if ext == "docx":
         return parsear_jauregui(file), "Jauregui DOCX"
     if ext in ("xlsx", "xls"):
