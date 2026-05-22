@@ -168,16 +168,25 @@ def logout() -> None:
 
 def render_login() -> None:
     """Muestra el formulario de login. El caller debe llamar st.stop() después."""
-    col = st.columns([1, 2, 1])[1]
+    st.markdown("<div style='height:7vh'></div>", unsafe_allow_html=True)
+    col = st.columns([1, 1.4, 1])[1]
     with col:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("## ⚖️ RASTRILLA")
-        st.markdown("**Intereses Moratorios — Uso Interno**")
-        st.divider()
+        st.markdown("""
+<div style="text-align:center; padding-bottom:1.75rem;">
+  <div style="font-size:2.25rem; font-weight:800; letter-spacing:-0.03em; color:#14532d; line-height:1.1;">
+    ⚖️ RASTRILLA
+  </div>
+  <div style="color:#6b7280; font-size:0.875rem; margin-top:0.4rem; font-weight:500;">
+    Intereses Moratorios · Uso Interno
+  </div>
+</div>
+""", unsafe_allow_html=True)
         with st.form("login_form"):
-            username = st.text_input("Usuario")
-            password = st.text_input("Contraseña", type="password")
-            submitted = st.form_submit_button("Entrar", use_container_width=True)
+            username = st.text_input("Usuario", placeholder="tu_usuario")
+            password = st.text_input("Contraseña", type="password", placeholder="••••••••")
+            submitted = st.form_submit_button(
+                "Ingresar", use_container_width=True, type="primary"
+            )
         if submitted:
             result = login(username.strip(), password)
             if result == "ok":

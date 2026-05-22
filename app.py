@@ -8,6 +8,7 @@ from auth import get_session_user, init_db, logout, render_login
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_intereses, primer_dia_mes_siguiente
 from exportar import exportar_excel, exportar_pdf
+from estilo import aplicar_estilos
 from parsear_pdf import parsear_archivo
 
 st.set_page_config(
@@ -17,6 +18,7 @@ st.set_page_config(
 )
 
 init_db()
+aplicar_estilos()
 
 usuario = get_session_user()
 if usuario is None:

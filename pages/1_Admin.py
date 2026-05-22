@@ -7,6 +7,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
+from estilo import aplicar_estilos
 from auth import (
     create_user,
     get_session_user,
@@ -24,6 +25,7 @@ st.set_page_config(
 )
 
 init_db()
+aplicar_estilos()
 
 # ── Auth guard ────────────────────────────────────────────────────────────────
 usuario = get_session_user()
