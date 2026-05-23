@@ -1,6 +1,8 @@
 import pandas as pd
 from datetime import date
 
+from calendario import dia_habil_n, fin_de_mes
+
 
 def primer_dia_mes_siguiente(periodo: str) -> date:
     """'04/2021' -> date(2021, 5, 1)"""
@@ -82,6 +84,97 @@ def calcular_interes_simple(
         "coeficiente":     round(coeficiente, 6),
         "interes":         interes,
         "total":           round(capital + interes, 2),
+    }
+
+
+def calcular_ejecucion(
+    df_planilla: pd.DataFrame,
+    fecha_devolucion: date,
+    fecha_hasta: date,
+    indice: pd.Series,
+    feriados_extra: tuple = (),
+) -> dict:
+    """
+    Calcula intereses para Ejecución de Sentencia (120 días hábiles judiciales).
+
+    Tramo A: períodos cuya fecha_desde ≤ dia_120.
+             Los capitales se suman y se calcula UN único interés desde dia_121.
+             Si dia_120 cae dentro de un mes → split proporcional de ese capital.
+    Tramo B: períodos con fecha_desde > dia_120.
+             Igual a Ampliación: cada período corre desde su propia fecha_desde.
+
+    Parameters
+    ----------
+    df_planilla   : DataFrame con columnas periodo, capital, fecha_desde
+    fecha_devolucion : fecha desde la que se cuentan los 120 días hábiles
+    fecha_hasta   : fecha efectiva de pago (extremo final de todos los intereses)
+    indice        : Serie BCRA (asof)
+    feriados_extra: tuple de date — inhábiles extra cargados en la DB
+    """
+    dia_120 = dia_habil_n(fecha_devolucion, 120, feriados_extra)
+    dia_121 = dia_habil_n(fecha_devolucion, 121, feriados_extra)
+
+    filas_a: list[dict] = []
+    filas_b: list[dict] = []
+
+    for _, row in df_planilla.iterrows():
+        periodo = row["periodo"]
+        capital = float(row["capital"])
+        fd = row["fecha_desde"]
+        fecha_desde: date = fd.date() if hasattr(fd, "date") else fd
+
+        fin_mes = fin_de_mes(fecha_desde)
+
+        if fecha_desde > dia_120:
+            # Todo en Tramo B
+            capital_a, capital_b = 0.0, capital
+        elif fin_mes <= dia_120:
+            # Todo en Tramo A (el mes entero cae dentro de los 120 días)
+            capital_a, capital_b = capital, 0.0
+        else:
+            # Día 120 cae dentro del mes → split proporcional
+            dias_en_a   = (dia_120 - fecha_desde).days + 1
+            dias_totales = (fin_mes - fecha_desde).days + 1
+            capital_a = round(capital * dias_en_a / dias_totales, 2)
+            capital_b = round(capital - capital_a, 2)
+
+        if capital_a > 0:
+            filas_a.append({"periodo": periodo, "capital": capital_a, "fecha_desde": fecha_desde})
+        if capital_b > 0:
+            filas_b.append({"periodo": periodo, "capital": capital_b, "fecha_desde": fecha_desde})
+
+    # ── Tramo A: capital acumulado, interés único desde dia_121 ──────────────
+    capital_a_total = round(sum(f["capital"] for f in filas_a), 2)
+    if capital_a_total > 0:
+        # calcular_fila usa T0 = fecha_desde - 1 día = dia_121 - 1 = dia_120 ✓
+        res_a = calcular_fila(
+            capital_a_total,
+            pd.Timestamp(dia_121),
+            pd.Timestamp(fecha_hasta),
+            indice,
+        )
+    else:
+        res_a = {"error": "No hay períodos en Tramo A para este rango de fechas."}
+
+    # ── Tramo B: igual a Ampliación ───────────────────────────────────────────
+    if filas_b:
+        df_b = pd.DataFrame(filas_b)
+        df_b["fecha_pago"] = pd.Timestamp(fecha_hasta)
+        res_b = calcular_intereses(df_b.reset_index(drop=True), indice)
+    else:
+        cols = ["periodo", "capital", "fecha_desde", "fecha_pago",
+                "indice_inicial", "indice_final", "coeficiente", "interes", "total", "error"]
+        res_b = pd.DataFrame(columns=cols)
+
+    return {
+        "fecha_devolucion": fecha_devolucion,
+        "fecha_hasta":      fecha_hasta,
+        "dia_120":          dia_120,
+        "dia_121":          dia_121,
+        "filas_a":          filas_a,
+        "capital_a_total":  capital_a_total,
+        "resultado_a":      res_a,
+        "resultado_b":      res_b,
     }
 
 

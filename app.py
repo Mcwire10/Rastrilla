@@ -24,9 +24,10 @@ if usuario is None:
 
 # ── Navegación por rol ────────────────────────────────────────────────────────
 home            = st.Page("pages/home.py",             title="Inicio",                  default=True)
+ejecucion       = st.Page("pages/ejecucion.py",        title="Ejecución de Sentencia")
 ampliacion      = st.Page("pages/ampliacion.py",       title="Ampliación de Ejecución")
 intereses_cobro = st.Page("pages/intereses_cobro.py",  title="Intereses hasta Cobro")
-pages = [home, ampliacion, intereses_cobro]
+pages = [home, ejecucion, ampliacion, intereses_cobro]
 
 if usuario["rol"] == "admin":
     pages.append(st.Page("pages/admin.py", title="Admin"))

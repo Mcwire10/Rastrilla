@@ -93,6 +93,15 @@ def init_db() -> None:
             )
         """)
 
+        # ── Feriados extra (días inhábiles judiciales adicionales) ────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS feriados_extra (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                fecha       TEXT    NOT NULL UNIQUE,
+                descripcion TEXT    NOT NULL DEFAULT ''
+            )
+        """)
+
 
 # ── Password ──────────────────────────────────────────────────────────────────
 
@@ -195,6 +204,32 @@ def log_calculo(
             (tipo, letrado_id, expediente, caratula,
              capital_total, interes_total, total, date.today().isoformat()),
         )
+
+
+# ── CRUD feriados extra ───────────────────────────────────────────────────────
+
+def list_feriados_extra() -> list[dict]:
+    """Lista todos los feriados/inhábiles judiciales extra, ordenados por fecha."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM feriados_extra ORDER BY fecha"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def add_feriado_extra(fecha: date, descripcion: str) -> None:
+    """Agrega un día inhábil judicial extra (única por fecha)."""
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO feriados_extra (fecha, descripcion) VALUES (?, ?)",
+            (fecha.isoformat(), descripcion),
+        )
+
+
+def delete_feriado_extra(feriado_id: int) -> None:
+    """Elimina un feriado extra por su ID."""
+    with _conn() as c:
+        c.execute("DELETE FROM feriados_extra WHERE id = ?", (feriado_id,))
 
 
 def registrar_pago(username: str) -> None:

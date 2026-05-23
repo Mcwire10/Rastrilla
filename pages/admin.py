@@ -9,6 +9,7 @@ import streamlit as st
 from auth import (
     create_user, list_users, registrar_pago, set_bloqueado,
     list_abogados, create_abogado, set_abogado_activo,
+    list_feriados_extra, add_feriado_extra, delete_feriado_extra,
 )
 
 usuario = st.session_state.get("usuario")
@@ -150,6 +151,56 @@ with st.form("nuevo_abogado"):
             try:
                 create_abogado(nuevo_nombre.strip().upper(), nuevo_cuil.strip())
                 st.success(f"Letrado **{nuevo_nombre.upper()}** agregado.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+st.divider()
+
+# ── Feriados judiciales extra ─────────────────────────────────────────────────
+st.subheader("Feriados judiciales extra")
+st.caption(
+    "Días inhábiles adicionales que no son feriados nacionales ni feria judicial oficial. "
+    "Se aplican al cálculo de los 120 días hábiles de Ejecución de Sentencia."
+)
+
+feriados_extra = list_feriados_extra()
+
+if not feriados_extra:
+    st.info("No hay feriados extra cargados.")
+else:
+    for fe in feriados_extra:
+        with st.container(border=True):
+            col_fe_info, col_fe_del = st.columns([5, 1])
+            with col_fe_info:
+                fecha_fe = date.fromisoformat(fe["fecha"])
+                st.markdown(
+                    f"**{fecha_fe.strftime('%d/%m/%Y')}** — {fe['descripcion'] or '(sin descripción)'}"
+                )
+            with col_fe_del:
+                if st.button("🗑️ Eliminar", key=f"del_fe_{fe['id']}", use_container_width=True):
+                    delete_feriado_extra(fe["id"])
+                    st.success("Feriado eliminado.")
+                    st.rerun()
+
+st.markdown("**Agregar feriado extra**")
+with st.form("nuevo_feriado_extra"):
+    col_fe1, col_fe2 = st.columns(2)
+    with col_fe1:
+        nueva_fecha_fe = st.date_input(
+            "Fecha del día inhábil", value=None, format="DD/MM/YYYY"
+        )
+    with col_fe2:
+        nueva_desc_fe = st.text_input(
+            "Descripción", placeholder="Ej: Asueto decretado por resolución X"
+        )
+    if st.form_submit_button("Agregar feriado", use_container_width=True):
+        if not nueva_fecha_fe:
+            st.error("Seleccioná una fecha.")
+        else:
+            try:
+                add_feriado_extra(nueva_fecha_fe, nueva_desc_fe.strip())
+                st.success(f"Feriado **{nueva_fecha_fe.strftime('%d/%m/%Y')}** agregado.")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")

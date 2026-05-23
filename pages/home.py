@@ -21,9 +21,11 @@ with col1:
     División automática Tramo A / Tramo B.<br>
     Tasa pasiva BCRA desde el día 121.
   </div>
-  <span class="calc-card-badge">Próximamente</span>
 </div>
 """, unsafe_allow_html=True)
+    st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
+    if st.button("▶ Iniciar", key="btn_ejecucion", use_container_width=True, type="primary"):
+        st.switch_page("pages/ejecucion.py")
 
 with col2:
     st.markdown("""
