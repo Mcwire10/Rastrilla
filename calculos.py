@@ -1,5 +1,5 @@
 import pandas as pd
-from datetime import date
+from datetime import date, timedelta
 
 from calendario import dia_habil_n, fin_de_mes
 
@@ -112,7 +112,7 @@ def calcular_ejecucion(
     feriados_extra: tuple de date — inhábiles extra cargados en la DB
     """
     dia_120 = dia_habil_n(fecha_devolucion, 120, feriados_extra)
-    dia_121 = dia_habil_n(fecha_devolucion, 121, feriados_extra)
+    dia_121 = dia_120 + timedelta(days=1)  # día siguiente calendario (no necesariamente hábil)
 
     filas_a: list[dict] = []
     filas_b: list[dict] = []

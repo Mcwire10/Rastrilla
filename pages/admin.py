@@ -10,6 +10,7 @@ from auth import (
     create_user, list_users, registrar_pago, set_bloqueado,
     list_abogados, create_abogado, set_abogado_activo,
     list_feriados_extra, add_feriado_extra, delete_feriado_extra,
+    importar_puentes_anio,
 )
 
 usuario = st.session_state.get("usuario")
@@ -165,7 +166,53 @@ st.caption(
 )
 
 feriados_extra = list_feriados_extra()
+anio_actual    = hoy.year
 
+# ── Banner: alerta si el año en curso no tiene puentes cargados ──────────────
+fe_anio_actual = [f for f in feriados_extra if f["fecha"].startswith(str(anio_actual))]
+if not fe_anio_actual:
+    st.warning(
+        f"⚠️ No hay feriados extra cargados para **{anio_actual}**. "
+        f"Importá los puentes turísticos del decreto vigente con el botón de abajo."
+    )
+
+# ── Importar desde API Argentina Datos ───────────────────────────────────────
+st.markdown("**Importar puentes turísticos desde Argentina Datos**")
+st.caption("Fuente: api.argentinadatos.com · Gratuito · Sin autenticación")
+
+col_anio, col_btn_api = st.columns([1, 3])
+with col_anio:
+    anio_import = st.number_input(
+        "Año", min_value=2024, max_value=anio_actual + 2,
+        value=anio_actual, label_visibility="collapsed"
+    )
+with col_btn_api:
+    if st.button(
+        f"📥 Importar puentes {anio_import}",
+        use_container_width=True,
+        type="primary",
+    ):
+        with st.spinner(f"Consultando API para {anio_import}..."):
+            try:
+                resultado_api = importar_puentes_anio(int(anio_import))
+                nuevos    = [r for r in resultado_api if r["nuevo"]]
+                existentes = [r for r in resultado_api if not r["nuevo"]]
+                if nuevos:
+                    st.success(f"✅ {len(nuevos)} puente(s) importado(s) para {anio_import}:")
+                    for r in nuevos:
+                        st.write(f"  • **{r['fecha'].strftime('%d/%m/%Y')}** — {r['descripcion']}")
+                if existentes:
+                    st.info(f"{len(existentes)} ya existía(n) — no se modificaron.")
+                if not resultado_api:
+                    st.info(f"La API no reporta puentes turísticos para {anio_import}.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al conectar con la API: {e}")
+
+st.divider()
+
+# ── Lista de feriados extra cargados ─────────────────────────────────────────
+st.markdown("**Feriados cargados**")
 if not feriados_extra:
     st.info("No hay feriados extra cargados.")
 else:
@@ -178,12 +225,13 @@ else:
                     f"**{fecha_fe.strftime('%d/%m/%Y')}** — {fe['descripcion'] or '(sin descripción)'}"
                 )
             with col_fe_del:
-                if st.button("🗑️ Eliminar", key=f"del_fe_{fe['id']}", use_container_width=True):
+                if st.button("🗑️", key=f"del_fe_{fe['id']}", use_container_width=True,
+                             help="Eliminar"):
                     delete_feriado_extra(fe["id"])
-                    st.success("Feriado eliminado.")
                     st.rerun()
 
-st.markdown("**Agregar feriado extra**")
+# ── Agregar manualmente ───────────────────────────────────────────────────────
+st.markdown("**Agregar manualmente**")
 with st.form("nuevo_feriado_extra"):
     col_fe1, col_fe2 = st.columns(2)
     with col_fe1:

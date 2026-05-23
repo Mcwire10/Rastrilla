@@ -232,6 +232,35 @@ def delete_feriado_extra(feriado_id: int) -> None:
         c.execute("DELETE FROM feriados_extra WHERE id = ?", (feriado_id,))
 
 
+def importar_puentes_anio(year: int) -> list[dict]:
+    """
+    Descarga los feriados del año desde api.argentinadatos.com,
+    filtra los de tipo 'puente' e inserta en feriados_extra.
+
+    Retorna lista de dicts: {fecha, descripcion, nuevo (bool)}
+      nuevo=True  → recién insertado
+      nuevo=False → ya existía (UNIQUE constraint → ignorado)
+    """
+    import requests
+    url = f"https://api.argentinadatos.com/v1/feriados/{year}"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+
+    # Respuesta: [{"fecha": "2024-04-01", "tipo": "puente", "nombre": "..."}]
+    puentes = [f for f in resp.json() if f.get("tipo") == "puente"]
+    resultado = []
+    for p in puentes:
+        fecha = date.fromisoformat(p["fecha"])
+        desc  = p.get("nombre", "Puente turístico")
+        try:
+            add_feriado_extra(fecha, desc)
+            resultado.append({"fecha": fecha, "descripcion": desc, "nuevo": True})
+        except Exception:
+            # Violación de UNIQUE → ya existía, lo ignoramos
+            resultado.append({"fecha": fecha, "descripcion": desc, "nuevo": False})
+    return resultado
+
+
 def registrar_pago(username: str) -> None:
     """Marca el pago del mes actual y desbloquea la cuenta."""
     with _conn() as c:
