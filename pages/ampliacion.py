@@ -40,23 +40,21 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error: {e}")
 
-    _usuario_sidebar = st.session_state.get("usuario", {})
-    if _usuario_sidebar.get("rol") == "admin":
-        if st.button("Actualizar feriados", use_container_width=True):
-            with st.spinner("Importando puentes..."):
-                try:
-                    _anio = date.today().year
-                    _res  = importar_puentes_anio(_anio)
-                    _new  = sum(1 for r in _res if r["nuevo"])
-                    if _new:
-                        st.success(f"{_new} feriado(s) importado(s) para {_anio}.")
-                    elif _res:
-                        st.info(f"Ya estaban cargados ({len(_res)}).")
-                    else:
-                        st.info(f"Sin puentes para {_anio}.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
+    if st.button("Actualizar feriados", use_container_width=True):
+        with st.spinner("Importando puentes..."):
+            try:
+                _anio = date.today().year
+                _res  = importar_puentes_anio(_anio)
+                _new  = sum(1 for r in _res if r["nuevo"])
+                if _new:
+                    st.success(f"{_new} feriado(s) importado(s) para {_anio}.")
+                elif _res:
+                    st.info(f"Ya estaban cargados ({len(_res)}).")
+                else:
+                    st.info(f"Sin puentes para {_anio}.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 
 # ── Título ──────────────────────────────────────────────────────────────────
