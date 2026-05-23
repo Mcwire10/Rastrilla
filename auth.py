@@ -52,6 +52,20 @@ def init_db() -> None:
         except Exception:
             pass  # columna ya existe
 
+        # Forzar primer_login=1 para usuarios que aún usan la contraseña por defecto
+        for _uname, _default_pass in [
+            ("gonzalez", "Pndl#R4k3J"),
+            ("moyano",   "Myn#R4k3M"),
+        ]:
+            _row = c.execute(
+                "SELECT password_hash FROM usuarios WHERE username = ? AND primer_login = 0",
+                (_uname,)
+            ).fetchone()
+            if _row and _verify(_default_pass, _row["password_hash"]):
+                c.execute(
+                    "UPDATE usuarios SET primer_login = 1 WHERE username = ?", (_uname,)
+                )
+
         hoy = date.today().isoformat()
 
         # Eliminar usuario de prueba si existe (setup inicial)
