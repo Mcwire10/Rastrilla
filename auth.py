@@ -180,13 +180,6 @@ def create_user(username: str, password: str, nombre: str,
         )
 
 
-def set_bloqueado(username: str, bloqueado: bool) -> None:
-    with _conn() as c:
-        c.execute(
-            "UPDATE usuarios SET bloqueado = ? WHERE username = ?",
-            (int(bloqueado), username),
-        )
-
 
 # ── CRUD abogados ─────────────────────────────────────────────────────────────
 
@@ -353,29 +346,6 @@ def clear_errores() -> None:
         c.execute("DELETE FROM errores")
 
 
-def registrar_pago(username: str) -> None:
-    """Marca el pago del mes actual y desbloquea la cuenta."""
-    with _conn() as c:
-        c.execute(
-            "UPDATE usuarios SET fecha_ultimo_pago = ?, bloqueado = 0 WHERE username = ?",
-            (date.today().isoformat(), username),
-        )
-
-
-# ── Auto-bloqueo ──────────────────────────────────────────────────────────────
-
-def _debe_autobloquear(user: dict) -> bool:
-    """True si el cliente no pagó este mes y ya pasó el día 10."""
-    if user["rol"] == "admin":
-        return False
-    today = date.today()
-    if today.day <= 10:
-        return False
-    if not user["fecha_ultimo_pago"]:
-        return True
-    last = date.fromisoformat(user["fecha_ultimo_pago"])
-    return last < date(today.year, today.month, 1)
-
 
 # ── Sesión ────────────────────────────────────────────────────────────────────
 
@@ -384,20 +354,12 @@ def get_session_user() -> dict | None:
 
 
 def login(username: str, password: str) -> str:
-    """
-    Retorna: 'ok' | 'no_user' | 'bad_pass' | 'bloqueado'
-    Aplica auto-bloqueo si corresponde.
-    """
+    """Retorna: 'ok' | 'no_user' | 'bad_pass'"""
     user = get_user(username)
     if not user:
         return "no_user"
     if not _verify(password, user["password_hash"]):
         return "bad_pass"
-    if _debe_autobloquear(user):
-        set_bloqueado(username, True)
-        user["bloqueado"] = 1
-    if user["bloqueado"]:
-        return "bloqueado"
     st.session_state["usuario"] = user
     return "ok"
 
@@ -504,7 +466,5 @@ def render_login() -> None:
             result = login(username.strip(), password)
             if result == "ok":
                 st.rerun()
-            elif result == "bloqueado":
-                st.error("⛔ Cuenta bloqueada. Contactá al administrador.")
             else:
                 st.error("Usuario o contraseña incorrectos.")
