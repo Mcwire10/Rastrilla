@@ -10,6 +10,7 @@ from auth import (
     list_abogados, create_abogado, set_abogado_activo,
     list_errores, clear_errores,
     get_uso_mensual, _CALC_LABELS, _DOC_LABELS,
+    change_password,
 )
 
 usuario = st.session_state.get("usuario")
@@ -168,3 +169,24 @@ else:
             st.markdown(f"**Mensaje:** {err['mensaje']}")
             if err["traceback"]:
                 st.code(err["traceback"], language="python")
+
+st.divider()
+
+# ── Cambiar contraseña del admin ──────────────────────────────────────────────
+st.subheader("🔑 Cambiar contraseña")
+with st.form("form_cambio_admin"):
+    _pass_actual  = st.text_input("Contraseña actual", type="password")
+    _pass_nueva   = st.text_input("Nueva contraseña", type="password")
+    _pass_confirm = st.text_input("Confirmar nueva contraseña", type="password")
+    if st.form_submit_button("Guardar nueva contraseña", use_container_width=True):
+        from auth import _verify, get_user
+        _admin_row = get_user(usuario["username"])
+        if not _verify(_pass_actual, _admin_row["password_hash"]):
+            st.error("La contraseña actual es incorrecta.")
+        elif len(_pass_nueva) < 8:
+            st.error("La nueva contraseña debe tener al menos 8 caracteres.")
+        elif _pass_nueva != _pass_confirm:
+            st.error("Las contraseñas nuevas no coinciden.")
+        else:
+            change_password(usuario["username"], _pass_nueva)
+            st.success("✅ Contraseña actualizada correctamente.")
