@@ -114,6 +114,11 @@ VISUAL_DENSITY   = 4   (respiro: métricas con padding, sin información densa)
 .login-form-area     → wrapper heading formulario
 .login-form-heading  → "Bienvenido"
 .login-form-sub      → subtítulo gris
+
+/* Ocultar UI de Streamlit */
+[data-testid="stMainMenu"] { display: none !important; }
+#MainMenu                   { visibility: hidden !important; }
+footer                      { visibility: hidden !important; }
 ```
 
 ---
@@ -187,8 +192,8 @@ CREATE TABLE feriados_extra (
 **Uso**: días inhábiles judiciales adicionales que no forman parte del calendario base
 (fijos + trasladables + ferias). Principalmente para **puentes turísticos por decreto anual**.
 
-Ejemplo: cada 1° de enero el admin debe cargar los puentes del nuevo año.
-Para 2024 (Decreto 106/2023): 01/04/2024 y 21/06/2024.
+Ejemplo: para 2024 (Decreto 106/2023): 01/04/2024 y 21/06/2024.
+El admin los carga manualmente o con el botón de importación automática desde la API.
 
 ### Funciones en `auth.py`
 ```python
@@ -211,6 +216,7 @@ log_calculo(tipo, letrado_id, expediente, caratula, capital_total, interes_total
 list_feriados_extra() → list[dict]
 add_feriado_extra(fecha: date, descripcion: str)
 delete_feriado_extra(feriado_id: int)
+importar_puentes_anio(year: int) → list[dict]  # API argentinadatos.com, filtra tipo='puente'
 
 # Auth
 login(username, password) → 'ok' | 'no_user' | 'bad_pass' | 'bloqueado'
@@ -219,6 +225,31 @@ get_session_user() → dict | None
 render_login()
 init_db()
 ```
+
+### Importación automática de puentes (`importar_puentes_anio`)
+
+```python
+def importar_puentes_anio(year: int) -> list[dict]:
+    import requests
+    url = f"https://api.argentinadatos.com/v1/feriados/{year}"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    # Estructura real de la API: {"fecha": "YYYY-MM-DD", "tipo": "puente", "nombre": "..."}
+    puentes = [f for f in resp.json() if f.get("tipo") == "puente"]
+    resultado = []
+    for p in puentes:
+        fecha = date.fromisoformat(p["fecha"])
+        desc  = p.get("nombre", "Puente turístico")
+        try:
+            add_feriado_extra(fecha, desc)
+            resultado.append({"fecha": fecha, "descripcion": desc, "nuevo": True})
+        except Exception:
+            resultado.append({"fecha": fecha, "descripcion": desc, "nuevo": False})
+    return resultado
+```
+
+El admin panel muestra un banner de alerta si el año actual no tiene puentes cargados,
+con botón de importación directa. También permite añadir fechas manualmente y eliminar.
 
 ---
 
@@ -304,21 +335,22 @@ total       = capital + interés
 - Algoritmo de Pascua: Butcher (implementado en `_pascua(year)`)
 
 **Ferias judiciales (fuero federal CSJN):**
-- Verano: **01-31 enero** (todo enero)
-- Invierno: **15-31 julio**
+- Verano: **01-31 enero** (todo enero completo)
+- Invierno: **15-31 julio** (segunda quincena)
 
 **Feriados extra:** tabla DB `feriados_extra` → pasados como `tuple[date]` al llamar las funciones.
 
 ### ⚠️ Puentes turísticos (decreto anual)
 Los puentes establecidos por decreto cada año (ej: Decreto 106/2023 para 2024: 01/04 y 21/06)
-**NO están hardcodeados**. El admin debe cargarlos en `feriados_extra` al inicio de cada año.
+**NO están hardcodeados**. El admin debe cargarlos en `feriados_extra` al inicio de cada año
+(manualmente o con el botón de importación desde la API en el panel Admin).
 
 ### Caso de validación del calendario
 ```
 Inicio: 29/11/2023
 Extras: (01/04/2024, 21/06/2024)   ← puentes Decreto 106/2023
 Día 120 esperado:  03/07/2024  ✓
-Día 121 esperado:  04/07/2024  ✓
+Día 121 esperado:  04/07/2024  ✓  (= dia_120 + 1 día calendario, NO hábil siguiente)
 ```
 Sin los puentes extra: día 120 = 01/07/2024 (2 días antes).
 
@@ -364,31 +396,42 @@ def calcular_ejecucion(df_planilla, fecha_devolucion, fecha_hasta, indice,
     """
 ```
 
-### Algoritmo `calcular_ejecucion`
+### Algoritmo `calcular_ejecucion` — reglas definitivas
 
 ```python
 dia_120 = dia_habil_n(fecha_devolucion, 120, feriados_extra)
-dia_121 = dia_habil_n(fecha_devolucion, 121, feriados_extra)  # = primer hábil post-120
+dia_121 = dia_120 + timedelta(days=1)  # ← SIEMPRE día calendario siguiente, NO hábil siguiente
 
 for cada fila en df_planilla:
-    fin_mes = fin_de_mes(fecha_desde)
+    periodo = str(row["periodo"])  # "MM/AAAA"
 
-    if fecha_desde > dia_120:
-        # Todo Tramo B
-    elif fin_mes <= dia_120:
-        # Todo Tramo A
+    # El split se basa en el MES DEL PERÍODO (MM/AAAA), NO en fecha_desde
+    mes_p, anio_p = int(periodo[:2]), int(periodo[3:])
+    inicio_periodo = date(anio_p, mes_p, 1)          # 1° del mes del período
+    fin_periodo    = fin_de_mes(inicio_periodo)        # último día del mes del período
+
+    if inicio_periodo > dia_120:
+        # El período empieza después del día 120 → todo Tramo B
+        capital_a, capital_b = 0.0, capital
+    elif fin_periodo <= dia_120:
+        # El período termina en o antes del día 120 → todo Tramo A
+        capital_a, capital_b = capital, 0.0
     else:
-        # Split proporcional (dia_120 cae dentro del mes)
-        dias_en_a    = (dia_120 - fecha_desde).days + 1
-        dias_totales = (fin_mes - fecha_desde).days + 1
-        capital_a    = round(capital * dias_en_a / dias_totales, 2)
-        capital_b    = capital - capital_a
+        # Día 120 cae dentro del mes del período → split proporcional
+        dias_en_a    = (dia_120 - inicio_periodo).days + 1
+        dias_totales = (fin_periodo - inicio_periodo).days + 1
+        capital_a = round(capital * dias_en_a / dias_totales, 2)
+        capital_b = round(capital - capital_a, 2)
 
 # Tramo A: calcular_fila(capital_a_total, dia_121, fecha_hasta, indice)
 #          → T0 = dia_121 - 1 = dia_120 ✓
 # Tramo B: calcular_intereses(df_b, indice)
 #          con fecha_pago = fecha_hasta para todas las filas
+#          fecha_desde en Tramo B = fecha_desde original de cada fila
 ```
+
+**⚠️ CRÍTICO — Split proporcional:** La proporción se calcula sobre el mes del campo
+`periodo` (MM/AAAA), **no** sobre el mes de `fecha_desde`. Ambos suelen diferir en un mes.
 
 ---
 
@@ -401,10 +444,36 @@ for cada fila en df_planilla:
 4. **Paso 2 — Expediente**
 5. **Paso 3 — Fecha de devolución** + preview en tiempo real de Día 120 / Día 121
 6. **Paso 4 — Planilla**: file_uploader + auto-fechas + `st.data_editor`
-7. **Paso 5 — Fecha efectiva de pago** (va DESPUÉS de la planilla)
+7. **Paso 5 — Fecha efectiva de pago** ← va DESPUÉS de la planilla, no antes
 8. **Botón Calcular**
-9. **Paso 6 — Resultado**: info día 120/121 · Tramo A (tabla + métricas + expander) · Tramo B (tabla + métricas) · Total general
-10. **Paso 7 — Exportar**: 2 columnas (Excel 2 hojas | PDF)
+9. **Resultado**:
+   - Info día 120 / día 121
+   - Tramo A: tabla de períodos + métrica capital agrupado + cálculo (coeficiente, interés)
+   - Tramo B: tabla por período + métricas
+   - **Box verde destacado**: "RESULTADO FINAL — Suma intereses moratorios Tramo A + Tramo B"
+     con el monto total en tipografía grande, y leyenda "Calculado hasta DD/MM/YYYY —
+     efectivo pago conforme recibo que consta en autos"
+   - 3 métricas bajo el box: Capital total · Intereses Tramo A · Intereses Tramo B
+10. **Exportar**: 2 columnas (Excel 2 hojas | PDF)
+
+### Resultado final — box verde (HTML inline)
+```python
+st.markdown(f"""
+<div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:12px;
+            padding:1.5rem 2rem; margin:0.5rem 0 1.5rem 0;">
+  <div style="font-size:0.75rem; font-weight:700; color:#16a34a; ...">
+    Resultado final — Suma intereses moratorios Tramo A + Tramo B
+  </div>
+  <div style="font-size:2.2rem; font-weight:700; color:#052e16; line-height:1.1;">
+    {fmt_ar(_int_total)}
+  </div>
+  <div style="margin-top:1rem; font-size:0.85rem; color:#374151;">
+    Calculado hasta: <strong>{res['fecha_hasta'].strftime('%d/%m/%Y')}</strong>
+    &nbsp;—&nbsp; efectivo pago conforme recibo que consta en autos
+  </div>
+</div>
+""", unsafe_allow_html=True)
+```
 
 ### Session state (prefijo `eje_`)
 - `eje_filas`: DataFrame planilla
@@ -414,8 +483,14 @@ for cada fila en df_planilla:
 
 ### Exportación
 ```python
-exportar_excel_ejecucion(resultado) → bytes   # 2 hojas: "Tramo A" y "Tramo B"
-exportar_pdf_ejecucion(resultado, titulo=...) → bytes  # secciones A y B
+exportar_excel_ejecucion(resultado) → bytes
+# Hoja "Tramo A": tabla de períodos Tramo A + cálculo único Tramo A + resultado final / fecha hasta
+# Hoja "Tramo B": tabla de períodos Tramo B (estilo ampliación)
+
+exportar_pdf_ejecucion(resultado, titulo=...) → bytes
+# Sección A: tabla períodos + cálculo único
+# Sección B: tabla por período
+# Al final: tabla RESULTADO FINAL + fecha hasta (header verde oscuro #052e16)
 ```
 
 ---
@@ -477,8 +552,9 @@ exportar_excel_ejecucion(resultado) → bytes   # 2 hojas: Tramo A / Tramo B
 exportar_pdf_ejecucion(resultado, titulo=...) → bytes
 ```
 
-PDF: reportlab, A4 landscape. Header azul `#1e3a5f`, filas alternadas, total en amarillo `#fef3cd`.
-PDF Tramo A calc: header verde `#2d6a4f`, dato en verde claro `#d8f3dc`.
+PDF general: reportlab, A4 landscape. Header azul `#1e3a5f`, filas alternadas, total en amarillo `#fef3cd`.
+PDF Ejecución Tramo A: header verde `#2d6a4f`, dato en verde claro `#d8f3dc`.
+PDF Resultado final: header verde oscuro `#052e16`, fila dato en verde muy claro `#f0fdf4`.
 
 ---
 
@@ -489,8 +565,11 @@ Guard doble: router no registra la página para clientes + `if usuario["rol"] !=
 ### Secciones
 1. **Usuarios y suscripciones**: estado (Al día / Vencido / Bloqueado), marcar pagado, bloquear/desbloquear, métricas
 2. **Letrados**: listar activos+inactivos, toggle activar/desactivar, form agregar
-3. **Feriados judiciales extra**: listar, eliminar, form agregar (fecha + descripción)
-   - Usar para cargar puentes turísticos del decreto anual al inicio de cada año
+3. **Feriados judiciales extra**:
+   - Banner de alerta si el año actual no tiene puentes cargados
+   - Selector de año + botón "Importar puentes desde API" (llama `importar_puentes_anio`)
+   - Listado de feriados con botón eliminar por cada uno
+   - Form de carga manual (fecha + descripción)
 4. **Agregar usuario**: form completo (nombre, username, password, rol, día pago)
 
 ---
@@ -528,22 +607,37 @@ Guard doble: router no registra la página para clientes + `if usuario["rol"] !=
 - `pages/admin.py`: sección feriados extra
 - `app.py` + `pages/home.py`: ejecución activa en navegación
 
-### ✅ Fixes post-Sprint 3 (rama dev, pendiente commit)
-**Bug crítico de calendario** — 4 errores en `calendario.py`:
-1. ❌ Feria verano: era Jan 15-31 → ✅ ahora Jan 1-31 (todo enero, CSJN)
-2. ❌ Feria invierno: era Jul 1-15 → ✅ ahora Jul 15-31 (CSJN)
-3. ❌ Faltaba **17/06 Güemes** (Ley 26.813) en `_FIJOS`
-4. ❌ Faltaba **Jueves Santo** (Pascua−3d) — solo se tenía Viernes Santo
+### ✅ Fixes post-Sprint 3
+
+**`2eb185d` — Bug crítico calendario (4 errores) + UI:**
+1. ❌ Feria verano: era Jan 15-31 → ✅ Jan 1-31 (todo enero, CSJN)
+2. ❌ Feria invierno: era Jul 1-15 → ✅ Jul 15-31 (CSJN)
+3. ❌ Faltaba 17/06 Güemes (Ley 26.813) en `_FIJOS`
+4. ❌ Faltaba Jueves Santo (Pascua−3d)
+5. UI: `fecha_hasta` movida al Paso 5 (después de la planilla)
 
 Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **03/07/2024 ✓**
 
-**UI fix** — `pages/ejecucion.py`:
-- `fecha_hasta` movida del paso 3 al paso 5 (después de la planilla)
+**`e268856` — Día 121 + importación de puentes:**
+- `dia_121 = dia_120 + timedelta(days=1)` (día calendario, no hábil siguiente)
+- `importar_puentes_anio(year)` en `auth.py` vía `api.argentinadatos.com`
+- Admin: banner alerta + botón importación + selector año
 
-### 🔜 Sprint 4 (NO implementado)
+**`5e28739` — Split proporcional por mes del período:**
+- El split se basa en el campo `periodo` (MM/AAAA), no en `fecha_desde`
+- `inicio_periodo = date(anio_p, mes_p, 1)`, `fin_periodo = fin_de_mes(inicio_periodo)`
+
+**`186568f` — Ocultar menú hamburguesa de Streamlit:**
+- 3 reglas CSS en `estilo.py`: `stMainMenu`, `#MainMenu`, `footer`
+
+**`9ea2ba8` — Resultado final + fecha hasta en Ejecución:**
+- Box verde destacado en `ejecucion.py`: suma intereses A+B + fecha efectiva de pago
+- `exportar_pdf_ejecucion`: tabla resultado final al pie del PDF
+- `exportar_excel_ejecucion`: filas resultado final en hoja "Tramo A"
+
+### 🔜 Sprint 4 (pendiente ejemplos del usuario)
 - **DOCX escritos judiciales**: uno por calculadora (Ejecución, Ampliación, Intereses hasta Cobro)
-  - Formato y estructura: pendiente ejemplos del usuario
-- **Mecanismo anual de feriados**: recordatorio/banner en Admin para cargar puentes del nuevo año
+  - **NO se puede iniciar sin los documentos de ejemplo** — el usuario los enviará
 - Merge `dev` → `main` cuando UAT esté completo
 
 ---
@@ -559,36 +653,55 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 - Güemes (17/06) y Jueves Santo son feriados del calendario base.
 - Puentes turísticos: **SIEMPRE** cargar en `feriados_extra` (varían cada año por decreto).
 
-### 3. Material Symbols / CSS
+### 3. Día 121 — regla definitiva
+`dia_121 = dia_120 + timedelta(days=1)` — día calendario siguiente al 120, sin importar si es hábil.
+Es un extremo de interés, no un día de notificación judicial.
+
+### 4. Split proporcional Ejecución
+Se calcula sobre el mes del campo `periodo` (MM/AAAA), **no** sobre `fecha_desde`.
+`fecha_desde` es el 1° del mes siguiente al período y NO debe usarse para el split.
+
+### 5. Material Symbols / CSS
 Nunca aplicar Outfit a `button` ni `span`. Breaks íconos de Streamlit.
 
-### 4. Sidebar wildcard
+### 6. Sidebar wildcard
 `[data-testid="stSidebar"] *` rompe SVG del toggle. Usar selectores específicos.
 
-### 5. Capital = Reajustado − Percibido
+### 7. Capital = Reajustado − Percibido
 NUNCA Dif.Neta (incluye SAC) ni la columna "Capital" de BlueCorp.
 
-### 6. Parser expediente
+### 8. Parser expediente
 `.partition(":")` en cada línea — preserva `:` en los valores.
 
-### 7. IUS — prohibido en el código
+### 9. IUS — prohibido en el código
 La palabra "IUS" nunca debe aparecer en ningún archivo del proyecto.
 
-### 8. Nombre
-Nombre público: **Rake**. Contexto legal: "Doctrina Rastrilla · Vega" (fallo judicial, no nombre de la app).
+### 10. Nombre público
+**Rake**. Contexto legal: "Doctrina Rastrilla · Vega" (fallo judicial, no nombre de la app).
 
-### 9. fecha efectiva de pago
-En **ampliacion.py** y **ejecucion.py**: el `st.date_input` de fecha de pago va **SIEMPRE después** de la tabla editable (`st.data_editor`), no antes.
+### 11. Fecha efectiva de pago — posición en UI
+En **ampliacion.py** y **ejecucion.py**: el `st.date_input` de fecha de pago va **SIEMPRE después**
+de la tabla editable (`st.data_editor`), no antes.
 
-### 10. lru_cache de calendario
-`feriados_del_anio` usa `lru_cache(32)`. El parámetro `extras` debe ser un `tuple` de `date` (hashable). Convertir siempre: `extras = tuple(date.fromisoformat(f["fecha"]) for f in list_feriados_extra())`.
+### 12. lru_cache de calendario
+`feriados_del_anio` usa `lru_cache(32)`. El parámetro `extras` debe ser un `tuple` de `date` (hashable).
+Convertir siempre: `extras = tuple(date.fromisoformat(f["fecha"]) for f in list_feriados_extra())`.
+
+### 13. API argentinadatos.com — estructura real
+Respuesta: `[{"fecha": "YYYY-MM-DD", "tipo": "puente"|"inamovible"|..., "nombre": "..."}]`
+Usar `date.fromisoformat(p["fecha"])` y `p.get("nombre", "Puente turístico")`.
+**No** asumir campos `dia`, `mes`, `motivo` — esa estructura NO existe.
 
 ---
 
 ## 20. Git log (rama dev)
 
 ```
-(pendiente commit) fix: calendario judicial + UI ejecucion fecha_hasta al paso 5
+9ea2ba8  feat: resultado final y fecha hasta en calculadora de ejecucion
+186568f  fix: ocultar menu hamburguesa de streamlit
+5e28739  fix: split proporcional basado en mes del periodo (no en fecha_desde)
+e268856  feat: dia 121 como dia calendario + importar puentes desde API
+2eb185d  fix: calendario judicial (ferias, Guemes, Jueves Santo) + UI fecha_hasta paso 5
 f96ff77  feat: Sprint 3 — Ejecucion de Sentencia (120 dias habiles judiciales)
 cbe8a34  docs: CONTEXT.md handoff completo Sprint 1-3
 86253fe  fix: correccion definitiva formula + fecha T0
