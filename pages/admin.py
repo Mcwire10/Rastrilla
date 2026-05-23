@@ -2,13 +2,11 @@
 admin.py — Panel de administración
 El router (app.py) ya hizo auth guard; aquí solo comprobamos rol admin.
 """
-from datetime import date
-
 import streamlit as st
 
 from auth import (
-    create_user, list_users, registrar_pago, set_bloqueado,
     list_abogados, create_abogado, set_abogado_activo,
+    list_errores, clear_errores,
 )
 
 usuario = st.session_state.get("usuario")
@@ -20,88 +18,6 @@ if usuario is None or usuario["rol"] != "admin":
 # ── Header ────────────────────────────────────────────────────────────────────
 st.title("🔧 Panel de Administración")
 st.caption(f"Sesión: **{usuario['nombre']}** ({usuario['username']})")
-st.divider()
-
-# ── Tabla de usuarios ─────────────────────────────────────────────────────────
-st.subheader("Usuarios y suscripciones")
-
-usuarios = list_users()
-hoy = date.today()
-
-
-def _estado(u: dict) -> str:
-    if u["bloqueado"]:
-        return "🔴 Bloqueado"
-    if not u["fecha_ultimo_pago"]:
-        return "⚠️ Sin pago registrado"
-    last = date.fromisoformat(u["fecha_ultimo_pago"])
-    if last >= date(hoy.year, hoy.month, 1):
-        return "✅ Al día"
-    if hoy.day > 10:
-        return "🟠 Vencido"
-    return "⏳ Pendiente"
-
-
-for u in usuarios:
-    with st.container(border=True):
-        col_info, col_pago, col_bloqueo = st.columns([4, 2, 2])
-
-        with col_info:
-            estado = _estado(u)
-            st.markdown(f"**{u['nombre']}** — `{u['username']}` &nbsp; {estado}")
-            st.caption(
-                f"Rol: {u['rol']} · "
-                f"Contrato: {u['fecha_contrato']} · "
-                f"Día de pago: {u['dia_pago']} · "
-                f"Último pago: {u['fecha_ultimo_pago'] or '—'}"
-            )
-
-        with col_pago:
-            if u["rol"] != "admin":
-                if st.button(
-                    "💰 Marcar pagado",
-                    key=f"pago_{u['username']}",
-                    use_container_width=True,
-                ):
-                    registrar_pago(u["username"])
-                    st.success("Pago registrado.")
-                    st.rerun()
-
-        with col_bloqueo:
-            if u["rol"] != "admin":
-                if u["bloqueado"]:
-                    if st.button(
-                        "🔓 Desbloquear",
-                        key=f"blq_{u['username']}",
-                        use_container_width=True,
-                    ):
-                        set_bloqueado(u["username"], False)
-                        st.success("Cuenta desbloqueada.")
-                        st.rerun()
-                else:
-                    if st.button(
-                        "🔒 Bloquear",
-                        key=f"blq_{u['username']}",
-                        use_container_width=True,
-                    ):
-                        set_bloqueado(u["username"], True)
-                        st.warning("Cuenta bloqueada.")
-                        st.rerun()
-
-st.divider()
-
-# ── Resumen ───────────────────────────────────────────────────────────────────
-clientes = [u for u in usuarios if u["rol"] == "cliente"]
-al_dia   = sum(1 for u in clientes if _estado(u) == "✅ Al día")
-vencidos = sum(1 for u in clientes if "Vencido" in _estado(u))
-bloq     = sum(1 for u in clientes if u["bloqueado"])
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total clientes", len(clientes))
-c2.metric("Al día ✅", al_dia)
-c3.metric("Vencidos 🟠", vencidos)
-c4.metric("Bloqueados 🔴", bloq)
-
 st.divider()
 
 # ── Letrados / Abogados ───────────────────────────────────────────────────────
@@ -156,26 +72,30 @@ with st.form("nuevo_abogado"):
 
 st.divider()
 
-# ── Agregar usuario ───────────────────────────────────────────────────────────
-st.subheader("Agregar usuario")
+# ── Log de errores del sistema ────────────────────────────────────────────────
+st.subheader("Log de errores")
+st.caption("Errores capturados automáticamente por la aplicación. Se envía mail de alerta a leandro.moyano7@gmail.com si el servidor SMTP está configurado.")
 
-with st.form("nuevo_usuario"):
-    col1, col2 = st.columns(2)
-    with col1:
-        nombre   = st.text_input("Nombre completo")
-        username = st.text_input("Usuario (login)")
-        password = st.text_input("Contraseña", type="password")
-    with col2:
-        rol      = st.selectbox("Rol", ["cliente", "admin"])
-        dia_pago = st.number_input("Día de pago (1–10)", min_value=1, max_value=10, value=1)
+errores = list_errores()
 
-    if st.form_submit_button("Crear usuario", use_container_width=True):
-        if not username or not password or not nombre:
-            st.error("Completá todos los campos.")
-        else:
-            try:
-                create_user(username.strip(), password, nombre.strip(), rol, int(dia_pago))
-                st.success(f"Usuario **{username}** creado correctamente.")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error: {e}")
+if not errores:
+    st.success("✅ Sin errores registrados.")
+else:
+    col_err_hdr, col_err_clear = st.columns([5, 1])
+    with col_err_hdr:
+        st.markdown(f"**{len(errores)} error(es) registrado(s)**")
+    with col_err_clear:
+        if st.button("🗑️ Limpiar", use_container_width=True, help="Eliminar todos los registros"):
+            clear_errores()
+            st.success("Log limpiado.")
+            st.rerun()
+
+    for err in errores:
+        mail_tag = "✉️ mail enviado" if err["mail_ok"] else "⚠️ mail no enviado"
+        with st.expander(
+            f"**{err['timestamp']}** — `{err['tipo']}` — {mail_tag}",
+            expanded=False,
+        ):
+            st.markdown(f"**Mensaje:** {err['mensaje']}")
+            if err["traceback"]:
+                st.code(err["traceback"], language="python")

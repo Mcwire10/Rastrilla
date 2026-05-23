@@ -2,9 +2,11 @@
 app.py — Router principal de Rake
 Gestiona auth, estilos, navegación por rol y sidebar.
 """
+import traceback
+
 import streamlit as st
 
-from auth import get_session_user, init_db, logout, render_login
+from auth import get_session_user, init_db, log_error, logout, render_login
 from estilo import aplicar_estilos
 
 st.set_page_config(
@@ -39,7 +41,17 @@ with st.sidebar:
     st.page_link("pages/home.py", label="Rake", icon="⚖️")
 
 # ── Contenido de la página activa ─────────────────────────────────────────────
-pg.run()
+try:
+    pg.run()
+except Exception as _exc:
+    _tb = traceback.format_exc()
+    log_error(type(_exc).__name__, str(_exc), _tb)
+    st.error(
+        "⚠️ Ocurrió un error inesperado. "
+        "El equipo fue notificado automáticamente."
+    )
+    with st.expander("Detalle del error"):
+        st.code(_tb)
 
 # ── Sidebar: navegación + footer ──────────────────────────────────────────────
 with st.sidebar:

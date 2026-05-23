@@ -5,11 +5,17 @@ SQLite + Railway Volume (/data/rastrilla.db en producción)
 import hashlib
 import os
 import secrets
+import smtplib
 import sqlite3
-from datetime import date
+import traceback as _traceback
+from datetime import date, datetime
+from email.mime.text import MIMEText
 from pathlib import Path
 
 import streamlit as st
+
+# Destinatario fijo de alertas de error
+_ERROR_MAIL_TO = "leandro.moyano7@gmail.com"
 
 # En Railway: variable de entorno DB_PATH=/data/rastrilla.db + Volume montado en /data
 DB_PATH = Path(os.getenv("DB_PATH", "rastrilla.db"))
@@ -40,9 +46,14 @@ def init_db() -> None:
             )
         """)
         hoy = date.today().isoformat()
+
+        # Eliminar usuario de prueba si existe (setup inicial)
+        c.execute("DELETE FROM usuarios WHERE username = 'testuser'")
+
         for username, password, rol, nombre in [
-            ("admin",    "Admin2025!", "admin",   "Administrador"),
-            ("testuser", "Test2025",   "cliente", "Usuario de Prueba"),
+            ("admin",    "Admin2025!",  "admin",   "Administrador"),
+            ("gonzalez", "Pndl#R4k3J", "cliente", "GONZALEZ PONDAL JUAN MANUEL"),
+            ("moyano",   "Myn#R4k3M",  "cliente", "MOYANO MATIAS ISMAEL"),
         ]:
             existe = c.execute(
                 "SELECT 1 FROM usuarios WHERE username = ?", (username,)
@@ -99,6 +110,18 @@ def init_db() -> None:
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha       TEXT    NOT NULL UNIQUE,
                 descripcion TEXT    NOT NULL DEFAULT ''
+            )
+        """)
+
+        # ── Log de errores del sistema ────────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS errores (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp  TEXT    NOT NULL,
+                tipo       TEXT    NOT NULL DEFAULT '',
+                mensaje    TEXT    NOT NULL,
+                traceback  TEXT    NOT NULL DEFAULT '',
+                mail_ok    INTEGER NOT NULL DEFAULT 0
             )
         """)
 
@@ -259,6 +282,67 @@ def importar_puentes_anio(year: int) -> list[dict]:
             # Violación de UNIQUE → ya existía, lo ignoramos
             resultado.append({"fecha": fecha, "descripcion": desc, "nuevo": False})
     return resultado
+
+
+# ── Log de errores ────────────────────────────────────────────────────────────
+
+def _send_error_email(subject: str, body: str) -> bool:
+    """
+    Envía un mail de alerta a _ERROR_MAIL_TO.
+    Requiere variables de entorno SMTP_USER y SMTP_PASSWORD (Gmail app password).
+    Retorna True si el envío fue exitoso.
+    """
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_pass = os.getenv("SMTP_PASSWORD", "")
+    if not smtp_user or not smtp_pass:
+        return False
+    try:
+        msg = MIMEText(body, "plain", "utf-8")
+        msg["Subject"] = f"[Rake] Error: {subject}"
+        msg["From"]    = smtp_user
+        msg["To"]      = _ERROR_MAIL_TO
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=10) as s:
+            s.login(smtp_user, smtp_pass)
+            s.send_message(msg)
+        return True
+    except Exception:
+        return False
+
+
+def log_error(tipo: str, mensaje: str, tb: str = "") -> None:
+    """
+    Registra un error en la tabla errores y envía mail de alerta si está configurado.
+    Llamar desde bloques except para capturar fallos del sistema.
+    """
+    ts = datetime.now().isoformat(sep=" ", timespec="seconds")
+    body = (
+        f"Timestamp : {ts}\n"
+        f"Tipo      : {tipo}\n"
+        f"Mensaje   : {mensaje}\n\n"
+        f"Traceback :\n{tb}"
+    )
+    mail_ok = int(_send_error_email(tipo or "Error", body))
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO errores (timestamp, tipo, mensaje, traceback, mail_ok) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (ts, tipo, mensaje, tb, mail_ok),
+        )
+
+
+def list_errores(limit: int = 50) -> list[dict]:
+    """Retorna los últimos errores registrados, más recientes primero."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM errores ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def clear_errores() -> None:
+    """Elimina todos los registros de la tabla errores."""
+    with _conn() as c:
+        c.execute("DELETE FROM errores")
 
 
 def registrar_pago(username: str) -> None:
