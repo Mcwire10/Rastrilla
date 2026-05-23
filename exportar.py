@@ -5,6 +5,11 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from docx import Document
+from docx.shared import Pt, Cm as DCm, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
 
 
 def _fmt(n: float) -> str:
@@ -385,4 +390,378 @@ def exportar_pdf_ejecucion(
     story.append(t_final)
 
     doc.build(story)
+    return buf.getvalue()
+
+
+# ── Ejecución de Sentencia — DOCX (Escrito judicial) ──────────────────────────
+
+def _numero_a_palabras(monto: float) -> str:
+    """Convierte monto a palabras en castellano (mayúsculas) para escritos judiciales.
+    Ej: 250000.50 → 'DOSCIENTOS CINCUENTA MIL CON 50/100'
+    """
+    _UNI = ["", "UN", "DOS", "TRES", "CUATRO", "CINCO",
+            "SEIS", "SIETE", "OCHO", "NUEVE"]
+    _ESP = ["DIEZ", "ONCE", "DOCE", "TRECE", "CATORCE", "QUINCE",
+            "DIECISÉIS", "DIECISIETE", "DIECIOCHO", "DIECINUEVE"]
+    _DEC = ["", "DIEZ", "VEINTE", "TREINTA", "CUARENTA", "CINCUENTA",
+            "SESENTA", "SETENTA", "OCHENTA", "NOVENTA"]
+    _CEN = ["", "CIENTO", "DOSCIENTOS", "TRESCIENTOS", "CUATROCIENTOS",
+            "QUINIENTOS", "SEISCIENTOS", "SETECIENTOS", "OCHOCIENTOS", "NOVECIENTOS"]
+    _VTI = {21: "VEINTIÚN", 22: "VEINTIDÓS", 23: "VEINTITRÉS", 24: "VEINTICUATRO",
+            25: "VEINTICINCO", 26: "VEINTISÉIS", 27: "VEINTISIETE",
+            28: "VEINTIOCHO", 29: "VEINTINUEVE"}
+
+    def _bloque(n: int) -> str:
+        if n == 0:
+            return ""
+        if n == 100:
+            return "CIEN"
+        partes = []
+        c, resto = divmod(n, 100)
+        if c:
+            partes.append(_CEN[c])
+        if 10 <= resto <= 19:
+            partes.append(_ESP[resto - 10])
+        elif 21 <= resto <= 29:
+            partes.append(_VTI[resto])
+        elif resto == 20:
+            partes.append("VEINTE")
+        else:
+            d, u = divmod(resto, 10)
+            if d:
+                partes.append(_DEC[d])
+            if u:
+                if d:
+                    partes.append("Y")
+                partes.append(_UNI[u])
+        return " ".join(p for p in partes if p)
+
+    entero = int(monto)
+    cents  = round((monto - entero) * 100)
+
+    if entero == 0:
+        palabras = "CERO"
+    else:
+        millones   = entero // 1_000_000
+        resto_mill = entero % 1_000_000
+        miles      = resto_mill // 1_000
+        resto_mil  = resto_mill % 1_000
+        partes = []
+        if millones == 1:
+            partes.append("UN MILLÓN")
+        elif millones > 1:
+            partes.append(f"{_bloque(millones)} MILLONES")
+        if miles == 1:
+            partes.append("MIL")
+        elif miles > 1:
+            partes.append(f"{_bloque(miles)} MIL")
+        if resto_mil:
+            partes.append(_bloque(resto_mil))
+        palabras = " ".join(p for p in partes if p)
+
+    if cents:
+        palabras += f" CON {cents:02d}/100"
+    return palabras
+
+
+def _docx_shade_cell(cell, fill: str) -> None:
+    """Aplica color de fondo a una celda DOCX (fill sin #)."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), fill)
+    tcPr.append(shd)
+
+
+def _docx_set_col_widths(table, widths_cm: list) -> None:
+    """Establece el ancho de cada columna de una tabla DOCX."""
+    for row in table.rows:
+        for j, cell in enumerate(row.cells):
+            if j < len(widths_cm):
+                cell.width = DCm(widths_cm[j])
+
+
+def _docx_add_table_header(table, headers: list, fill: str = "1E3A5F") -> None:
+    """Escribe la fila de encabezado con fondo oscuro y texto blanco."""
+    hdr_row = table.rows[0]
+    for i, txt in enumerate(headers):
+        cell = hdr_row.cells[i]
+        cell.text = ""
+        _docx_shade_cell(cell, fill)
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(txt)
+        run.bold = True
+        run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        run.font.size = Pt(8)
+
+
+def _docx_add_data_row(table, row_idx: int, values: list,
+                       bold: bool = False, fill: str | None = None) -> None:
+    """Escribe una fila de datos en la tabla DOCX."""
+    row = table.rows[row_idx]
+    for j, val in enumerate(values):
+        cell = row.cells[j]
+        cell.text = ""
+        if fill:
+            _docx_shade_cell(cell, fill)
+        p = cell.paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p.add_run(str(val))
+        run.bold = bold
+        run.font.size = Pt(8)
+
+
+def generar_docx_ejecucion(
+    resultado: dict,
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial DOCX — Ejecución de Sentencia (PASO #3)."""
+
+    # ── Datos ────────────────────────────────────────────────────────────────
+    filas_a         = resultado["filas_a"]
+    capital_a_total = resultado["capital_a_total"]
+    res_a           = resultado["resultado_a"]
+    res_b           = resultado["resultado_b"]
+    fecha_hasta     = resultado["fecha_hasta"]
+    dia_121         = resultado["dia_121"]
+
+    int_a_val  = float(res_a.get("interes", 0) or 0) if not res_a.get("error") else 0.0
+    int_b_val  = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
+    monto_total = int_a_val + int_b_val
+
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+
+    # ── Documento ────────────────────────────────────────────────────────────
+    doc = Document()
+    sec = doc.sections[0]
+    sec.page_width    = DCm(21.0)
+    sec.page_height   = DCm(29.7)
+    sec.left_margin   = DCm(3.0)
+    sec.right_margin  = DCm(2.0)
+    sec.top_margin    = DCm(2.5)
+    sec.bottom_margin = DCm(2.5)
+    doc.styles["Normal"].font.name = "Arial"
+    doc.styles["Normal"].font.size = Pt(12)
+
+    def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+                   indent: float = 1.25, space_after: float = 6) -> None:
+        """Párrafo con runs de distintos formatos. parts: [(text, bold, underline)]."""
+        p = doc.add_paragraph()
+        p.alignment = align
+        p.paragraph_format.first_line_indent = DCm(indent)
+        p.paragraph_format.space_after = Pt(space_after)
+        for text, bold, underline in parts:
+            r = p.add_run(text)
+            r.bold = bold
+            r.underline = underline
+            r.font.size = Pt(12)
+
+    def _par(text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+             indent: float = 1.25, space_after: float = 6) -> None:
+        _par_mixed([(text, bold, False)], align=align, indent=indent, space_after=space_after)
+
+    def _spacer(pt: float = 4) -> None:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(pt)
+        p.paragraph_format.space_before = Pt(0)
+
+    # ── TÍTULO ───────────────────────────────────────────────────────────────
+    p_tit = doc.add_paragraph()
+    p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_tit.paragraph_format.first_line_indent = DCm(0)
+    p_tit.paragraph_format.space_after = Pt(8)
+    r = p_tit.add_run("PRACTICA LIQUIDACION – INTERESES")
+    r.bold = True
+    r.underline = True
+    r.font.size = Pt(12)
+
+    # ── SEÑOR JUEZ FEDERAL ───────────────────────────────────────────────────
+    p_juez = doc.add_paragraph()
+    p_juez.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_juez.paragraph_format.first_line_indent = DCm(0)
+    p_juez.paragraph_format.space_after = Pt(6)
+    r2 = p_juez.add_run("SEÑOR JUEZ FEDERAL:")
+    r2.bold = True
+    r2.font.size = Pt(12)
+
+    # ── Párrafo letrado + carátula ───────────────────────────────────────────
+    p_intro = doc.add_paragraph()
+    p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_intro.paragraph_format.first_line_indent = DCm(1.25)
+    p_intro.paragraph_format.space_after = Pt(10)
+    for text, bold in [
+        (nombre_letrado, True),
+        (f", CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: «", False),
+        (f"{caratula} - EXPTE. {expediente}", True),
+        ("», con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:", False),
+    ]:
+        r3 = p_intro.add_run(text)
+        r3.bold = bold
+        r3.font.size = Pt(12)
+
+    # ── I. OBJETO ────────────────────────────────────────────────────────────
+    _par_mixed([("I. OBJETO:", True, True)], indent=1.25, space_after=4)
+    _par(
+        "Que vengo por el presente a practicar liquidación de los intereses devengados "
+        "hasta el efectivo pago del crédito reconocido en autos, conforme las pautas "
+        "oportunamente establecidas y el criterio emergente de la sentencia firme.",
+        space_after=10,
+    )
+
+    # ── II. LIQUIDACION PRACTICADA ────────────────────────────────────────────
+    _par_mixed([("II. LIQUIDACION PRACTICADA:", True, True)], indent=1.25, space_after=4)
+    _par(
+        "Para la confección de la presente liquidación se aplicó la Tasa Pasiva Promedio "
+        "del Banco Central de la República Argentina desde el día siguiente al que quedó "
+        "aprobada la liquidación precedente y hasta la fecha de efectivo pago, entendiendo "
+        "por tal aquella en que los fondos fueron efectivamente acreditados en la cuenta "
+        "bancaria del actor, todo ello conforme constancias de autos.",
+        space_after=6,
+    )
+
+    monto_palabras = _numero_a_palabras(monto_total)
+    monto_numero   = _fmt(monto_total)
+    _par_mixed([
+        ("En consecuencia, la diferencia resultante a favor de la parte actora en concepto "
+         "de intereses devengados hasta su efectivo pago asciende a la suma de PESOS ", False, False),
+        (f"{monto_palabras} ($ {monto_numero})", True, False),
+        (".", False, False),
+    ], space_after=10)
+
+    # ── PLANILLA TRAMO A ─────────────────────────────────────────────────────
+    p_la = doc.add_paragraph()
+    p_la.paragraph_format.first_line_indent = DCm(0)
+    p_la.paragraph_format.space_after = Pt(3)
+    ra = p_la.add_run("PLANILLA — TRAMO A")
+    ra.bold = True
+    ra.font.size = Pt(9)
+
+    n_rows_a = 1 + len(filas_a) + 1
+    tbl_a = doc.add_table(rows=n_rows_a, cols=2)
+    tbl_a.style = "Table Grid"
+    _docx_set_col_widths(tbl_a, [5.5, 10.5])
+    _docx_add_table_header(tbl_a, ["Período", "Capital proporcional ($)"])
+    for i, fila in enumerate(filas_a, start=1):
+        _docx_add_data_row(tbl_a, i, [fila["periodo"], f"$ {_fmt(fila['capital'])}"])
+    _docx_add_data_row(
+        tbl_a, n_rows_a - 1,
+        ["TOTAL TRAMO A", f"$ {_fmt(capital_a_total)}"],
+        bold=True, fill="FEF3CD",
+    )
+    _spacer(4)
+
+    # Cálculo Tramo A
+    if not res_a.get("error"):
+        tbl_calc = doc.add_table(rows=2, cols=6)
+        tbl_calc.style = "Table Grid"
+        _docx_set_col_widths(tbl_calc, [3.0, 2.5, 2.5, 2.5, 2.5, 3.0])
+        _docx_add_table_header(
+            tbl_calc,
+            ["Capital ($)", "Int. desde", "Int. hasta", "Índice T₀", "Índice Tₘ", "Interés moratorio ($)"],
+            fill="2D6A4F",
+        )
+        _docx_add_data_row(tbl_calc, 1, [
+            f"$ {_fmt(capital_a_total)}",
+            dia_121.strftime("%d/%m/%Y"),
+            fecha_hasta.strftime("%d/%m/%Y"),
+            f"{res_a['indice_inicial']:,.4f}",
+            f"{res_a['indice_final']:,.4f}",
+            f"$ {_fmt(res_a['interes'])}",
+        ], bold=True, fill="D8F3DC")
+        _spacer(6)
+
+    # ── PLANILLA TRAMO B ─────────────────────────────────────────────────────
+    if not res_b.empty:
+        df_b_ok = res_b[res_b["error"].isna()].copy()
+        if not df_b_ok.empty:
+            p_lb = doc.add_paragraph()
+            p_lb.paragraph_format.first_line_indent = DCm(0)
+            p_lb.paragraph_format.space_after = Pt(3)
+            rb = p_lb.add_run("PLANILLA — TRAMO B")
+            rb.bold = True
+            rb.font.size = Pt(9)
+
+            n_rows_b = 1 + len(df_b_ok) + 1
+            tbl_b = doc.add_table(rows=n_rows_b, cols=6)
+            tbl_b.style = "Table Grid"
+            _docx_set_col_widths(tbl_b, [2.2, 2.8, 2.5, 2.5, 3.0, 3.0])
+            _docx_add_table_header(
+                tbl_b,
+                ["Período", "Capital ($)", "Int. desde", "Fecha pago", "Interés ($)", "Total ($)"],
+            )
+            for i, (_, row) in enumerate(df_b_ok.iterrows(), start=1):
+                _docx_add_data_row(tbl_b, i, [
+                    row["periodo"],
+                    f"$ {_fmt(row['capital'])}",
+                    row["fecha_desde"].strftime("%d/%m/%Y"),
+                    row["fecha_pago"].strftime("%d/%m/%Y"),
+                    f"$ {_fmt(row['interes'])}",
+                    f"$ {_fmt(row['total'])}",
+                ])
+            t_int_b_d = df_b_ok["interes"].sum()
+            t_tot_b_d = df_b_ok["total"].sum()
+            _docx_add_data_row(
+                tbl_b, n_rows_b - 1,
+                ["TOTAL TRAMO B", "", "", "", f"$ {_fmt(t_int_b_d)}", f"$ {_fmt(t_tot_b_d)}"],
+                bold=True, fill="FEF3CD",
+            )
+            _spacer(6)
+
+    # Resultado final
+    tbl_res = doc.add_table(rows=2, cols=2)
+    tbl_res.style = "Table Grid"
+    _docx_set_col_widths(tbl_res, [12.0, 4.0])
+    _docx_add_table_header(
+        tbl_res,
+        ["RESULTADO FINAL — Intereses moratorios Tramo A + Tramo B", f"$ {_fmt(monto_total)}"],
+        fill="052E16",
+    )
+    _docx_add_data_row(
+        tbl_res, 1,
+        ["Calculado hasta — Efectivo pago conforme recibo que consta en autos",
+         fecha_hasta.strftime("%d/%m/%Y")],
+        bold=True, fill="F0FDF4",
+    )
+    _spacer(10)
+
+    # ── III. DERECHO ─────────────────────────────────────────────────────────
+    _par_mixed([("III. DERECHO:", True, True)], indent=1.25, space_after=4)
+    _par(
+        "La presente liquidación encuentra sustento en lo dispuesto en autos y en el "
+        "criterio de sentencia firme que reconoce la procedencia de los intereses devengados "
+        "hasta la íntegra satisfacción del crédito reconocido judicialmente.",
+        space_after=6,
+    )
+    _par(
+        "Asimismo, corresponde la aplicación de la tasa pasiva promedio del Banco Central "
+        "de la República Argentina para el período comprendido entre la aprobación de la "
+        "liquidación precedente y la efectiva acreditación de los fondos, en tanto durante "
+        "dicho lapso subsistió impaga la obligación a cargo de la demandada.",
+        space_after=10,
+    )
+
+    # ── IV. PETITUM ──────────────────────────────────────────────────────────
+    _par_mixed([
+        ("IV. PETITUM:", True, True),
+        (" Por lo expuesto a V.S., solicito:", False, False),
+    ], indent=1.25, space_after=4)
+    _par(
+        "a) Tenga por practicada la liquidación de intereses devengados hasta su efectivo "
+        "pago conforme planilla que se acompaña.",
+        space_after=4,
+    )
+    _par("b) Oportunamente, apruebe la misma en cuanto por derecho corresponda.", space_after=4)
+    _par("c) Intime a la demandada al pago de las sumas resultantes.", space_after=10)
+
+    # ── Cierre ───────────────────────────────────────────────────────────────
+    _par("Proveer de conformidad,", indent=1.25, space_after=4)
+    _par("SERÁ JUSTICIA.", bold=True, indent=1.25, space_after=0)
+
+    buf = io.BytesIO()
+    doc.save(buf)
     return buf.getvalue()
