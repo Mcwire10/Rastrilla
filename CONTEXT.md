@@ -149,11 +149,21 @@ CREATE TABLE usuarios (
     rol               TEXT    NOT NULL DEFAULT 'cliente',  -- 'admin' | 'cliente'
     nombre            TEXT    NOT NULL DEFAULT '',
     fecha_contrato    TEXT    NOT NULL,        -- ISO date alta
-    dia_pago          INTEGER NOT NULL DEFAULT 1,  -- día del mes acordado (1-10)
-    fecha_ultimo_pago TEXT,                    -- ISO date último pago
-    bloqueado         INTEGER NOT NULL DEFAULT 0   -- 0|1
+    dia_pago          INTEGER NOT NULL DEFAULT 1,
+    fecha_ultimo_pago TEXT,
+    bloqueado         INTEGER NOT NULL DEFAULT 0,
+    primer_login      INTEGER NOT NULL DEFAULT 0   -- 1 = forzar cambio de contraseña
 )
 ```
+
+**Usuarios activos:**
+| username | contraseña inicial | rol | nombre |
+|---|---|---|---|
+| `admin` | `Admin2025!` | admin | Administrador |
+| `gonzalez` | `Pndl#R4k3J` | cliente | GONZALEZ PONDAL JUAN MANUEL |
+| `moyano` | `Myn#R4k3M` | cliente | MOYANO MATIAS ISMAEL |
+
+`gonzalez` y `moyano` tienen `primer_login = 1` → al primer ingreso se les fuerza el cambio de contraseña. Una vez que cambian, `primer_login` queda en 0 definitivamente. Las contraseñas iniciales no se conocen ni se pueden recuperar una vez cambiadas (hash SHA-256 con salt).
 
 ### Tabla `abogados`
 ```sql
@@ -195,14 +205,23 @@ CREATE TABLE feriados_extra (
 Ejemplo: para 2024 (Decreto 106/2023): 01/04/2024 y 21/06/2024.
 El admin los carga manualmente o con el botón de importación automática desde la API.
 
+### Tabla `errores` (log del sistema)
+```sql
+CREATE TABLE errores (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT    NOT NULL,
+    tipo       TEXT    NOT NULL DEFAULT '',
+    mensaje    TEXT    NOT NULL,
+    traceback  TEXT    NOT NULL DEFAULT '',
+    mail_ok    INTEGER NOT NULL DEFAULT 0   -- 1 = mail de alerta enviado
+)
+```
+
 ### Funciones en `auth.py`
 ```python
 # Usuarios
 get_user(username) → dict | None
-list_users() → list[dict]
-create_user(username, password, nombre, rol, dia_pago)
-set_bloqueado(username, bool)
-registrar_pago(username)
+change_password(username, new_password)  # actualiza hash + primer_login = 0
 
 # Abogados
 list_abogados() → list[dict]  # solo activos
@@ -218,11 +237,17 @@ add_feriado_extra(fecha: date, descripcion: str)
 delete_feriado_extra(feriado_id: int)
 importar_puentes_anio(year: int) → list[dict]  # API argentinadatos.com, filtra tipo='puente'
 
+# Errores del sistema
+log_error(tipo, mensaje, tb="")   # guarda en DB + envía mail si SMTP configurado
+list_errores(limit=50) → list[dict]
+clear_errores()
+
 # Auth
-login(username, password) → 'ok' | 'no_user' | 'bad_pass' | 'bloqueado'
+login(username, password) → 'ok' | 'no_user' | 'bad_pass'
 logout()
 get_session_user() → dict | None
 render_login()
+render_cambio_password()  # pantalla de primer ingreso (mismo diseño split-screen)
 init_db()
 ```
 
@@ -248,14 +273,28 @@ def importar_puentes_anio(year: int) -> list[dict]:
     return resultado
 ```
 
-El admin panel muestra un banner de alerta si el año actual no tiene puentes cargados,
-con botón de importación directa. También permite añadir fechas manualmente y eliminar.
+### Log de errores y alertas por mail
+
+- `log_error()` se llama desde el `try/except` global en `app.py` que envuelve `pg.run()`
+- Requiere variables de entorno en Railway: `SMTP_USER` (Gmail) + `SMTP_PASSWORD` (App Password de Google)
+- Sin esas vars el error se guarda en DB pero no se envía mail
+- Destinatario fijo: `leandro.moyano7@gmail.com`
 
 ---
 
-## 6. Navegación (app.py)
+## 6. Navegación y flujo de auth (app.py)
 
 ```python
+# 1. Auth guard — muestra login si no hay sesión
+usuario = get_session_user()
+if usuario is None:
+    render_login(); st.stop()
+
+# 2. Primer login — fuerza cambio de contraseña antes de entrar
+if usuario.get("primer_login", 0):
+    render_cambio_password(); st.stop()
+
+# 3. Navegación normal
 home            = st.Page("pages/home.py",             title="Inicio",         default=True)
 ejecucion       = st.Page("pages/ejecucion.py",        title="Ejecución de Sentencia")
 ampliacion      = st.Page("pages/ampliacion.py",       title="Ampliación de Ejecución")
@@ -266,6 +305,15 @@ if usuario["rol"] == "admin":
     pages.append(st.Page("pages/admin.py", title="Admin"))
 
 pg = st.navigation(pages, position="hidden")
+
+# 4. Captura global de errores
+try:
+    pg.run()
+except Exception as _exc:
+    log_error(type(_exc).__name__, str(_exc), traceback.format_exc())
+    st.error("⚠️ Ocurrió un error inesperado. El equipo fue notificado automáticamente.")
+    with st.expander("Detalle del error"):
+        st.code(traceback.format_exc())
 ```
 
 ---
@@ -558,23 +606,31 @@ PDF Resultado final: header verde oscuro `#052e16`, fila dato en verde muy claro
 
 ---
 
-## 16. Panel de administración (`pages/admin.py`)
+## 16. Sidebar — botones de actualización
+
+Presente en las 3 calculadoras (ejecucion, ampliacion, intereses_cobro). Visible para **todos los usuarios**.
+
+```
+Índice BCRA
+Com. 14290 · Uso de la Justicia
+[Datos hasta: DD/MM/YYYY]
+[Actualizar índice BCRA]     ← descarga diar_ind.xls desde BCRA, limpia cache
+[Actualizar feriados]        ← importar_puentes_anio(año_actual), muestra cuántos se cargaron
+```
+
+---
+
+## 17. Panel de administración (`pages/admin.py`)
 
 Guard doble: router no registra la página para clientes + `if usuario["rol"] != "admin": st.stop()`.
 
 ### Secciones
-1. **Usuarios y suscripciones**: estado (Al día / Vencido / Bloqueado), marcar pagado, bloquear/desbloquear, métricas
-2. **Letrados**: listar activos+inactivos, toggle activar/desactivar, form agregar
-3. **Feriados judiciales extra**:
-   - Banner de alerta si el año actual no tiene puentes cargados
-   - Selector de año + botón "Importar puentes desde API" (llama `importar_puentes_anio`)
-   - Listado de feriados con botón eliminar por cada uno
-   - Form de carga manual (fecha + descripción)
-4. **Agregar usuario**: form completo (nombre, username, password, rol, día pago)
+1. **Letrados**: listar activos+inactivos, toggle activar/desactivar, form agregar nuevo
+2. **Log de errores**: lista de errores capturados (timestamp, tipo, mail enviado/no), expander con traceback, botón "Limpiar". Si no hay errores muestra `✅ Sin errores registrados`.
 
 ---
 
-## 17. Deploy (Railway)
+## 18. Deploy (Railway)
 
 ```json
 {"deploy": {"startCommand": "streamlit run app.py --server.port $PORT --server.headless true --server.address 0.0.0.0"}}
@@ -585,7 +641,7 @@ Guard doble: router no registra la página para clientes + `if usuario["rol"] !=
 
 ---
 
-## 18. Estado de sprints
+## 19. Estado de sprints
 
 ### ✅ Sprint 1 (`81bd123`)
 - `pages/home.py`, `pages/intereses_cobro.py`, `auth.py` tabla abogados, `calculos.py` calcular_interes_simple
@@ -635,6 +691,36 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 - `exportar_pdf_ejecucion`: tabla resultado final al pie del PDF
 - `exportar_excel_ejecucion`: filas resultado final en hoja "Tramo A"
 
+### ✅ Refactors post-Sprint 3 (rama dev)
+
+**`052d6ff` + `5febaef` — Botón "Actualizar feriados" en sidebar:**
+- Movido del panel Admin al sidebar de las 3 calculadoras
+- Visible para todos los usuarios (no solo admin)
+- Importa puentes del año corriente con un click
+
+**`9d03f00` — Usuarios letrados + log de errores:**
+- Usuarios `gonzalez` y `moyano` creados por defecto en `init_db()`
+- `testuser` eliminado automáticamente al arrancar
+- Tabla `errores` + `log_error()` + `send_error_email()` + `list/clear_errores()`
+- Admin simplificado: solo Letrados + Log de errores (sin usuarios/suscripciones)
+- `app.py`: captura global de excepciones con `try/except` sobre `pg.run()`
+
+**`90b42c8` — Cambio de contraseña obligatorio en primer ingreso:**
+- Columna `primer_login` en tabla `usuarios`
+- `render_cambio_password()`: mismo diseño split-screen que login, fuerza nueva contraseña (≥8 chars)
+- Tras guardar: session_state actualizado, entra directo a la app sin re-login
+- `gonzalez` y `moyano` arrancan con `primer_login = 1`
+
+**`c7aaf1c` — Eliminar sistema de bloqueo/suscripción:**
+- Removidos: `set_bloqueado`, `registrar_pago`, `_debe_autobloquear`
+- `login()` solo retorna `'ok'` | `'no_user'` | `'bad_pass'`
+- Cuentas siempre habilitadas
+
+**`f0b2270` — Fix primer_login para usuarios existentes:**
+- La migración `ALTER TABLE` asignaba `DEFAULT 0` a usuarios ya en la DB
+- `init_db()` verifica el hash: si coincide con la contraseña por defecto → fuerza `primer_login = 1`
+- Una vez que cambian la contraseña, el hash no coincide más → no se vuelve a tocar
+
 ### 🔜 Sprint 4 (pendiente ejemplos del usuario)
 - **DOCX escritos judiciales**: uno por calculadora (Ejecución, Ampliación, Intereses hasta Cobro)
   - **NO se puede iniciar sin los documentos de ejemplo** — el usuario los enviará
@@ -642,7 +728,7 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 
 ---
 
-## 19. Gotchas críticos — leer antes de tocar el código
+## 20. Gotchas críticos — leer antes de tocar el código
 
 ### 1. Fórmula BCRA
 `(100 + Tₘ) / (100 + T₀) - 1`. **NUNCA** `Tₘ/T₀-1`. T₀ = siempre el día **anterior** al inicio de intereses.
@@ -692,18 +778,38 @@ Respuesta: `[{"fecha": "YYYY-MM-DD", "tipo": "puente"|"inamovible"|..., "nombre"
 Usar `date.fromisoformat(p["fecha"])` y `p.get("nombre", "Puente turístico")`.
 **No** asumir campos `dia`, `mes`, `motivo` — esa estructura NO existe.
 
+### 14. primer_login — lógica de migración
+`init_db()` corre en cada arranque. Si un usuario tiene `primer_login = 0` pero su hash
+coincide con la contraseña por defecto conocida → se fuerza `primer_login = 1`.
+Esto garantiza que usuarios creados antes de agregar la columna también pasen por el cambio.
+**No agregar esta lógica a usuarios nuevos** — solo aplica a `gonzalez` y `moyano`.
+
+### 15. Sin bloqueo de cuentas
+Las cuentas no se bloquean nunca. `login()` no llama a auto-bloqueo ni verifica `bloqueado`.
+La columna `bloqueado` sigue en la DB pero es inerte. No reimplementar ese sistema.
+
+### 16. SMTP para alertas de error
+Variables de entorno en Railway: `SMTP_USER` + `SMTP_PASSWORD` (Gmail App Password).
+Sin ellas el log a DB funciona igual, solo no envía mail. No hardcodear credenciales.
+
 ---
 
-## 20. Git log (rama dev)
+## 21. Git log (rama dev)
 
 ```
+f0b2270  fix: forzar primer_login=1 para usuarios con contrasena por defecto
+c7aaf1c  refactor: eliminar sistema de bloqueo y suscripcion
+90b42c8  feat: cambio de contrasena obligatorio en primer ingreso
+9d03f00  feat: usuarios letrados + log de errores con alerta por mail
+5febaef  fix: boton actualizar feriados visible para todos los usuarios
+052d6ff  refactor: mover actualizacion de feriados al sidebar (boton global)
+a4e2eff  docs: CONTEXT.md actualizado al cierre de Sprint 3 + todos los fixes
 9ea2ba8  feat: resultado final y fecha hasta en calculadora de ejecucion
 186568f  fix: ocultar menu hamburguesa de streamlit
 5e28739  fix: split proporcional basado en mes del periodo (no en fecha_desde)
 e268856  feat: dia 121 como dia calendario + importar puentes desde API
 2eb185d  fix: calendario judicial (ferias, Guemes, Jueves Santo) + UI fecha_hasta paso 5
 f96ff77  feat: Sprint 3 — Ejecucion de Sentencia (120 dias habiles judiciales)
-cbe8a34  docs: CONTEXT.md handoff completo Sprint 1-3
 86253fe  fix: correccion definitiva formula + fecha T0
 4952570  feat: agregar exportacion PDF a ambas calculadoras
 a3398c3  fix: fecha efectiva de pago va despues de la tabla en ampliacion
