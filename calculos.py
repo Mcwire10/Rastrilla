@@ -26,8 +26,8 @@ def calcular_fila(
     if pd.isna(idx_final):
         return {"error": f"Sin índice para fecha {pd.Timestamp(fecha_pago).strftime('%d/%m/%Y')}"}
 
-    # i = Tm / T0 - 1  — índice acumulado BCRA (valores en miles, no porcentajes)
-    coeficiente = float(idx_final) / float(idx_inicial) - 1
+    # i = (100 + Tm) / (100 + T0) - 1  — Metodología BCRA (Res. 45/26 / CM 14290)
+    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
     interes = round(capital * coeficiente, 2)
     total = round(capital + interes, 2)
 
@@ -49,17 +49,18 @@ def calcular_interes_simple(
 ) -> dict:
     """
     Intereses Aprobados hasta Cobro.
-    T0 = índice del día de aprobación (intereses corren desde el día SIGUIENTE).
+    T0 = índice del día ANTERIOR a la aprobación (intereses corren desde el día de aprobación).
     Tm = índice del día de cobro efectivo.
+    Fórmula: (100 + Tm) / (100 + T0) - 1  — igual que calcular_fila (CM 14290).
     """
-    t0_fecha = pd.Timestamp(fecha_aprobacion)
+    t0_fecha = pd.Timestamp(fecha_aprobacion) - pd.Timedelta(days=1)
     tm_fecha = pd.Timestamp(fecha_cobro)
     idx_inicial = indice.asof(t0_fecha)
     idx_final   = indice.asof(tm_fecha)
 
     if pd.isna(idx_inicial):
         raise ValueError(
-            f"Sin índice BCRA para {fecha_aprobacion.strftime('%d/%m/%Y')}. "
+            f"Sin índice BCRA para {t0_fecha.strftime('%d/%m/%Y')}. "
             "Actualizá el índice desde el sidebar."
         )
     if pd.isna(idx_final):
@@ -68,13 +69,13 @@ def calcular_interes_simple(
             "Actualizá el índice desde el sidebar."
         )
 
-    # i = Tm / T0 - 1  — índice acumulado BCRA (valores en miles, no porcentajes)
-    coeficiente = float(idx_final) / float(idx_inicial) - 1
+    # i = (100 + Tm) / (100 + T0) - 1  — Metodología BCRA (Res. 45/26 / CM 14290)
+    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
     interes = round(capital * coeficiente, 2)
     return {
         "capital":         capital,
         "fecha_t0":        t0_fecha.date(),
-        "fecha_desde":     (t0_fecha + pd.Timedelta(days=1)).date(),
+        "fecha_desde":     fecha_aprobacion,
         "fecha_hasta":     fecha_cobro,
         "indice_inicial":  round(float(idx_inicial), 4),
         "indice_final":    round(float(idx_final), 4),
