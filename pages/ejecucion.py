@@ -105,7 +105,7 @@ if exp:
 st.divider()
 
 # ── 3. Fechas clave ────────────────────────────────────────────────────────────
-st.subheader("3. Fechas clave")
+st.subheader("3. Fecha de devolución")
 
 # Session state
 if "eje_fecha_devolucion" not in st.session_state:
@@ -113,21 +113,12 @@ if "eje_fecha_devolucion" not in st.session_state:
 if "eje_fecha_hasta" not in st.session_state:
     st.session_state.eje_fecha_hasta = date.today()
 
-col_f1, col_f2 = st.columns(2)
-with col_f1:
-    st.session_state.eje_fecha_devolucion = st.date_input(
-        "Fecha de devolución del expediente",
-        value=st.session_state.eje_fecha_devolucion,
-        format="DD/MM/YYYY",
-        help="Desde esta fecha se cuentan los 120 días hábiles judiciales.",
-    )
-with col_f2:
-    st.session_state.eje_fecha_hasta = st.date_input(
-        "Fecha efectiva de pago",
-        value=st.session_state.eje_fecha_hasta,
-        format="DD/MM/YYYY",
-        help="Fecha de cobro efectivo. Se aplica a toda la liquidación.",
-    )
+st.session_state.eje_fecha_devolucion = st.date_input(
+    "Fecha de devolución del expediente",
+    value=st.session_state.eje_fecha_devolucion,
+    format="DD/MM/YYYY",
+    help="Desde esta fecha se cuentan los 120 días hábiles judiciales.",
+)
 
 # Preview: muestra Día 120 / Día 121 en tiempo real
 if st.session_state.eje_fecha_devolucion:
@@ -145,6 +136,7 @@ st.divider()
 
 # ── 4. Planilla de liquidación ────────────────────────────────────────────────
 st.subheader("4. Planilla de liquidación")
+
 
 if "eje_filas" not in st.session_state:
     st.session_state.eje_filas = pd.DataFrame(columns=["periodo", "capital", "fecha_desde"])
@@ -203,6 +195,17 @@ df_editor = st.data_editor(
     key="eje_editor_filas",
 )
 st.session_state.eje_filas = df_editor
+
+st.divider()
+
+# ── 5. Fecha efectiva de pago ─────────────────────────────────────────────────
+st.subheader("5. Fecha efectiva de pago")
+st.session_state.eje_fecha_hasta = st.date_input(
+    "Fecha efectiva de pago (se aplica a toda la liquidación)",
+    value=st.session_state.eje_fecha_hasta,
+    format="DD/MM/YYYY",
+    help="Fecha de cobro efectivo. Extremo final del período de intereses.",
+)
 
 st.divider()
 
@@ -266,7 +269,7 @@ if st.session_state.get("eje_resultado") is not None:
     def fmt_ar(n: float) -> str:
         return f"$ {n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-    st.subheader("5. Resultado")
+    st.subheader("6. Resultado")
     st.info(
         f"📅 **Día 120** hábil judicial: **{res['dia_120'].strftime('%d/%m/%Y')}** &nbsp;·&nbsp; "
         f"**Día 121** (inicio intereses Tramo A): **{res['dia_121'].strftime('%d/%m/%Y')}**"
@@ -357,7 +360,7 @@ if st.session_state.get("eje_resultado") is not None:
     cg3.metric("Gran total",                 fmt_ar(_gran_total))
 
     # ── Exportar ──────────────────────────────────────────────────────────────
-    st.subheader("6. Exportar")
+    st.subheader("7. Exportar")
 
     expediente_num = exp.get("Expediente", "")
     nombre_base    = expediente_num.replace("/", "-") or "liquidacion"

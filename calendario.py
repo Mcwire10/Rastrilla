@@ -2,12 +2,16 @@
 calendario.py — Calendario judicial para cálculo de días hábiles.
 
 Feriados incluidos:
-  - Nacionales inamovibles (fijos por ley)
+  - Nacionales inamovibles (fijos por ley), incluyendo 17/6 (Güemes)
   - Nacionales trasladables (Aug 17, Oct 12, Nov 20) — trasladados al lunes más cercano
-  - Semana Santa (Viernes Santo) y Carnaval — calculados desde Pascua
-  - Feria judicial de verano: 15-31 enero
-  - Feria judicial de invierno: 1-15 julio
+  - Semana Santa (Jueves Santo + Viernes Santo) y Carnaval — calculados desde Pascua
+  - Feria judicial de verano: 1-31 enero (todo enero, fuero federal CSJN)
+  - Feria judicial de invierno: 15-31 julio (fuero federal CSJN)
   - Feriados extra manuales (tabla DB, pasados como parámetro)
+
+NOTA: Los "puentes turísticos" por decreto anual (ej: Decreto 106/2023 para 2024)
+NO están hardcodeados — varían cada año. Cargarlos en la tabla feriados_extra
+desde el panel Admin.
 """
 from datetime import date, timedelta
 from functools import lru_cache
@@ -19,6 +23,7 @@ _FIJOS = [
     (2,  4),   # Día del Veterano y los Caídos en Malvinas
     (1,  5),   # Día del Trabajador
     (25, 5),   # Revolución de Mayo
+    (17, 6),   # Paso a la Inmortalidad del General Güemes (Ley 26.813)
     (20, 6),   # Paso a la Inmortalidad del General Belgrano
     (9,  7),   # Día de la Independencia
     (8,  12),  # Inmaculada Concepción de María
@@ -98,17 +103,18 @@ def feriados_del_anio(year: int, extras: tuple = ()) -> frozenset:
     pascua = _pascua(year)
     f.add(pascua - timedelta(days=48))  # Lunes de Carnaval
     f.add(pascua - timedelta(days=47))  # Martes de Carnaval
+    f.add(pascua - timedelta(days=3))   # Jueves Santo
     f.add(pascua - timedelta(days=2))   # Viernes Santo
 
-    # Feria judicial de verano: 15-31 enero
-    d = date(year, 1, 15)
+    # Feria judicial de verano: 1-31 enero (todo enero, fuero federal CSJN)
+    d = date(year, 1, 1)
     while d.month == 1:
         f.add(d)
         d += timedelta(days=1)
 
-    # Feria judicial de invierno: 1-15 julio
-    d = date(year, 7, 1)
-    while d.day <= 15:
+    # Feria judicial de invierno: 15-31 julio (fuero federal CSJN)
+    d = date(year, 7, 15)
+    while d.month == 7:
         f.add(d)
         d += timedelta(days=1)
 
