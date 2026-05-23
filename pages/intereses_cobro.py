@@ -166,7 +166,7 @@ if st.session_state.get("resultado_cobro"):
             st.markdown(f"**Intereses desde:** {res['fecha_desde'].strftime('%d/%m/%Y')}")
             st.markdown(f"**Hasta:** {res['fecha_hasta'].strftime('%d/%m/%Y')}")
         with cd2:
-            st.markdown(f"**Índice T₀ ({res['fecha_desde'].strftime('%d/%m/%Y')}):** {res['indice_inicial']:,.4f}")
+            st.markdown(f"**Índice T₀ ({res['fecha_t0'].strftime('%d/%m/%Y')}):** {res['indice_inicial']:,.4f}")
             st.markdown(f"**Índice Tₘ ({res['fecha_hasta'].strftime('%d/%m/%Y')}):** {res['indice_final']:,.4f}")
             st.markdown(f"**Coeficiente:** {res['coeficiente']:.6f}  ({res['coeficiente']*100:.4f}%)")
 

@@ -26,8 +26,8 @@ def calcular_fila(
     if pd.isna(idx_final):
         return {"error": f"Sin índice para fecha {pd.Timestamp(fecha_pago).strftime('%d/%m/%Y')}"}
 
-    # i = ((100 + Tm) / (100 + T0) - 1)  — Metodología BCRA Res. 45/26
-    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
+    # i = Tm / T0 - 1  — índice acumulado BCRA (valores en miles, no porcentajes)
+    coeficiente = float(idx_final) / float(idx_inicial) - 1
     interes = round(capital * coeficiente, 2)
     total = round(capital + interes, 2)
 
@@ -68,10 +68,12 @@ def calcular_interes_simple(
             "Actualizá el índice desde el sidebar."
         )
 
-    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
+    # i = Tm / T0 - 1  — índice acumulado BCRA (valores en miles, no porcentajes)
+    coeficiente = float(idx_final) / float(idx_inicial) - 1
     interes = round(capital * coeficiente, 2)
     return {
         "capital":         capital,
+        "fecha_t0":        t0_fecha.date(),
         "fecha_desde":     (t0_fecha + pd.Timedelta(days=1)).date(),
         "fecha_hasta":     fecha_cobro,
         "indice_inicial":  round(float(idx_inicial), 4),

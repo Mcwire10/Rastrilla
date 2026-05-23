@@ -12,20 +12,22 @@ Calculadora de intereses moratorios judiciales contra ANSES (reajuste previsiona
 
 ```
 rastrilla/
-├── app.py                  # Router principal: auth guard + st.navigation() + sidebar global
-├── auth.py                 # Autenticación, usuarios SQLite, sesión Streamlit
-├── estilo.py               # CSS global (Rake UI — taste-skill DV=8 MI=6 VD=4)
-├── bcra.py                 # Carga y descarga del índice BCRA
-├── calculos.py             # Motor de cálculo puro (sin UI)
-├── parsear_pdf.py          # Parsers por formato: BlueCorp, Jauregui DOCX/Excel/CSV
-├── exportar.py             # Exportación Excel y PDF judicial
+├── app.py                    # Router principal: auth guard + st.navigation() + sidebar global
+├── auth.py                   # Autenticación, usuarios/abogados/expedientes SQLite, sesión
+├── estilo.py                 # CSS global (Rake UI — taste-skill DV=8 MI=6 VD=4)
+├── bcra.py                   # Carga y descarga del índice BCRA
+├── calculos.py               # Motor de cálculo puro (sin UI)
+├── parsear_pdf.py            # Parsers por formato: BlueCorp, Jauregui DOCX/Excel/CSV
+├── exportar.py               # Exportación Excel y PDF judicial
 ├── pages/
-│   ├── calculadora.py      # UI de cálculo: cargar datos → calcular → exportar
-│   └── admin.py            # Panel admin: usuarios, suscripciones, bloqueos
+│   ├── home.py               # Pantalla principal con 3 cards de calculadoras
+│   ├── ampliacion.py         # Calculadora: Ampliación de Ejecución (multi-período)
+│   ├── intereses_cobro.py    # Calculadora: Intereses Aprobados hasta Cobro (capital único)
+│   └── admin.py              # Panel admin: usuarios, suscripciones, abogados, bloqueos
 ├── data/
-│   └── diar_ind.xls        # Serie BCRA bundleada (actualizable desde la app)
+│   └── diar_ind.xls          # Serie BCRA bundleada (actualizable desde la app)
 ├── .streamlit/
-│   └── config.toml         # Tema base: light, primaryColor #16a34a
+│   └── config.toml           # Tema base: light, primaryColor #16a34a
 ├── requirements.txt
 └── DOCUMENTACION.md
 ```
@@ -35,10 +37,10 @@ rastrilla/
 | Archivo | Qué hace |
 |---|---|
 | `app.py` | `set_page_config` · `init_db` · `aplicar_estilos` · auth guard · `st.navigation()` · logo sidebar · footer sidebar |
-| `auth.py` | Hash/verify de passwords · CRUD usuarios SQLite · auto-bloqueo por pago · `render_login()` |
-| `estilo.py` | CSS inyectado via `st.markdown()`: login split-screen, sidebar oscuro, métricas, animaciones, responsive |
+| `auth.py` | Hash/verify passwords · CRUD usuarios/abogados/expedientes SQLite · auto-bloqueo · `render_login()` |
+| `estilo.py` | CSS inyectado via `st.markdown()`: login split-screen, sidebar oscuro, cards, métricas, animaciones, responsive |
 | `bcra.py` | Lee `data/diar_ind.xls`, descarga desde BCRA, expone `cargar_indice()` y `fecha_ultimo_dato()` |
-| `calculos.py` | `calcular_intereses(df, indice)` y `primer_dia_mes_siguiente(periodo)` |
+| `calculos.py` | Motor: `calcular_interes_simple()`, `calcular_intereses()`, `calcular_fila()`, `primer_dia_mes_siguiente()` |
 | `parsear_pdf.py` | Detecta formato por extensión/contenido y retorna `(df, nombre_formato)` |
 | `exportar.py` | `exportar_excel()` → bytes xlsx · `exportar_pdf()` → bytes PDF A4 landscape |
 
@@ -64,7 +66,34 @@ En Railway: `DB_PATH=/data/rastrilla.db` + Volume montado en `/data` para persis
 | `fecha_ultimo_pago` | TEXT | ISO date del último pago registrado |
 | `bloqueado` | INTEGER | 0/1 |
 
-### Credenciales por defecto (se crean si no existen)
+### Tabla `abogados`
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `nombre_completo` | TEXT | En mayúsculas (ej: GONZALEZ PONDAL JUAN MANUEL) |
+| `cuil` | TEXT UNIQUE | Formato libre (ej: 20/26436117/7) |
+| `activo` | INTEGER | 0/1 — solo activos aparecen en las calculadoras |
+
+**Letrados cargados por defecto:**
+- GONZALEZ PONDAL JUAN MANUEL · CUIL 20/26436117/7
+- MOYANO MATIAS ISMAEL · CUIL 23-38001381-9
+
+### Tabla `expedientes` (log de cálculos)
+
+| Columna | Tipo | Descripción |
+|---|---|---|
+| `id` | INTEGER PK | Autoincrement |
+| `tipo` | TEXT | `ampliacion` o `cobro` |
+| `letrado_id` | INTEGER | FK → abogados.id |
+| `expediente` | TEXT | Número de expediente |
+| `caratula` | TEXT | Carátula de la causa |
+| `capital_total` | REAL | Suma de capitales |
+| `interes_total` | REAL | Suma de intereses calculados |
+| `total` | REAL | Capital + intereses |
+| `fecha_calculo` | TEXT | ISO date del día del cálculo |
+
+### Credenciales por defecto
 
 | Usuario | Contraseña | Rol |
 |---|---|---|
@@ -72,7 +101,7 @@ En Railway: `DB_PATH=/data/rastrilla.db` + Volume montado en `/data` para persis
 | `testuser` | `Test2025` | cliente |
 
 ### Auto-bloqueo
-Si el día del mes > 10 y el último pago registrado es de un mes anterior al actual, el cliente queda bloqueado automáticamente al intentar login. El admin puede desbloquearlo manualmente o registrar un pago desde el panel de administración.
+Si el día del mes > 10 y el último pago registrado es de un mes anterior, el cliente queda bloqueado al intentar login. El admin puede desbloquearlo o registrar pago desde el panel.
 
 ### Flujo de sesión
 ```
@@ -85,117 +114,142 @@ get_session_user() → st.session_state.get("usuario")
 
 ## 3. Navegación (st.navigation)
 
-`app.py` usa `st.navigation(pages, position="hidden")` para ocultar la barra de navegación nativa de Streamlit y construir la propia en el sidebar.
+`app.py` usa `st.navigation(pages, position="hidden")` para construir la navegación en el sidebar.
 
 ```python
-pages = [st.Page("pages/calculadora.py", title="Calculadora", default=True)]
+pages = [
+    st.Page("pages/home.py",            title="Inicio",                 default=True),
+    st.Page("pages/ampliacion.py",      title="Ampliación de Ejecución"),
+    st.Page("pages/intereses_cobro.py", title="Intereses hasta Cobro"),
+]
 if usuario["rol"] == "admin":
     pages.append(st.Page("pages/admin.py", title="Admin"))
-
-pg = st.navigation(pages, position="hidden")
 ```
 
 **Estructura del sidebar** (orden de renderizado):
 
 ```
-⚖️ Rake              ← logo: st.page_link() → siempre navega a calculadora
+⚖️ Rake              ← logo: st.page_link() → siempre navega a home.py
 ──────────────────
-[contenido de la página activa, ej: Índice BCRA en calculadora.py]
+[contenido de la página activa, ej: Índice BCRA en calculadoras]
 ──────────────────
 🔧 Administración    ← solo si rol == admin
-📊 Calculadora       ← visible siempre (botón de "volver a home")
+🏠 Inicio            ← visible siempre
 ──────────────────
 👤 Nombre · rol
 [Cerrar sesión]
 ```
 
-Ventajas del modelo:
-- Los clientes **nunca ven ni pueden acceder** a `admin.py` (la página no existe en su árbol de navegación).
-- El logo "Rake" es el botón de "volver al inicio" desde cualquier página.
-- El botón `📊 Calculadora` es el back-button explícito desde el panel de admin.
+Los clientes **nunca ven ni pueden acceder** a `admin.py`. El logo "⚖️ Rake" es el botón de "volver al home" desde cualquier página.
 
 ---
 
-## 4. Sistema de diseño (Rake UI)
+## 4. Pantalla principal (home.py)
 
-Implementado íntegramente en `estilo.py` via `st.markdown(_CSS, unsafe_allow_html=True)`.  
-Filosofía: **taste-skill** con diales `DESIGN_VARIANCE=8 / MOTION_INTENSITY=6 / VISUAL_DENSITY=4`.
+Tres cards de calculadoras en columnas. Cada card tiene icono, título, descripción y botón "▶ Iniciar" (o badge "Próximamente" si no está implementada).
 
-### Tipografía
-- **Fuente:** Outfit (Google Fonts) — Inter explícitamente prohibido por taste-skill.
-- **Selector CSS:** solo `body, input, textarea, select, p, li, .stMarkdown` — **nunca `button` ni `span`**.
-  - Motivo crítico: Streamlit usa **Material Symbols Rounded** (CSS ligatures) para íconos en `button` y `span`. Si se sobreescribe la fuente en estos elementos, el texto "keyboard_double_arrow_left" aparece literal en lugar del ícono de colapsar sidebar.
-
-### Login split-screen (DV=8 — asimétrico)
-```
-desktop (>= 768px):
-  fondo: linear-gradient(90deg, #14532d 50%, #f9fafb 50%)
-  izquierda: .login-bg-panel (position: fixed, 50vw) → "Sistema de liquidación / Rake / descripción"
-  derecha: st.columns([1,1]) → columna 2 tiene el formulario
-
-mobile (< 768px):
-  .login-bg-panel → position: relative, ancho 100%, banner verde superior compacto
-  columna izquierda: display: none
-  columna formulario: min-width 100%
-  .login-spacer: 22vh → 1.5rem
-  
-tablet (768–1023px):
-  split-screen mantenido, brand name reducido a 4rem
-```
-
-### Sidebar
-- Fondo: `#14532d` (verde oscuro permanente).
-- Botones: fondo `rgba(255,255,255,0.92)` + texto `#052e16` (verde muy oscuro para contraste máximo).
-- Logo (`st.page_link`): 1.35rem, bold, `letter-spacing: -0.04em`, hover verde menta.
-- Selectores **específicos** (sin wildcard `*`) para evitar romper toggle y code.
-
-### Animaciones (MI=6 — cubic-bezier)
-- `@keyframes fadeUp` en `[data-testid="stMain"]`: 0.45s, cubic-bezier(0.16, 1, 0.3, 1).
-- Métricas con stagger: col1 → 0.05s delay, col2 → 0.12s, col3 → 0.19s.
-- Botones: `transform: translateY(-1px)` en hover, `scale(0.98) translateY(1px)` en active.
-
-### Métricas (VD=4)
-- Fondo `#f0fdf4`, borde `#bbf7d0`, border-radius 10px.
-- Labels en uppercase, `font-size: 0.65rem`, `letter-spacing: 0.08em`.
+| Card | Estado | Destino |
+|---|---|---|
+| 📋 Ejecución de Sentencia | Próximamente (Sprint 3) | `pages/ejecucion.py` |
+| 📎 Ampliación de Ejecución | ✅ Operativa | `pages/ampliacion.py` |
+| 💰 Intereses Aprobados hasta Cobro | ✅ Operativa | `pages/intereses_cobro.py` |
 
 ---
 
-## 5. Algoritmo de cálculo
+## 5. Calculadoras
+
+### 5.1 Ampliación de Ejecución (`ampliacion.py`)
+
+**Caso de uso:** múltiples períodos de diferencia de haberes. Para cada período, el interés mora corre desde el 1° del mes siguiente.
+
+**Flujo por pasos:**
+1. **Letrado presentante** — `st.selectbox` con abogados activos de la DB
+2. **Datos del expediente** — copy-paste del texto del sistema de consulta judicial; parser automático por `:` en cada línea
+3. **Planilla de liquidación:**
+   - `st.file_uploader` — acepta PDF BlueCorp, DOCX Jauregui, Excel, CSV
+   - Si el archivo trae `fecha_pago` (ej: BlueCorp), se pre-llena el date_input
+   - Botón "🔄 Auto-fechas" — calcula `fecha_desde` = 1° del mes siguiente al período
+   - `st.date_input` — fecha efectiva de pago única para toda la liquidación
+   - `st.data_editor` — tabla editable para revisión y corrección manual
+4. **Calcular** → `calcular_intereses(df, indice)`; resultado en `st.session_state["amp_resultado"]`
+5. **Resultado** — tabla detallada + métricas (capital · intereses · total)
+6. **Exportar** — Excel `.xlsx` con nombre `ampliacion_{expediente}.xlsx`
+
+Cada cálculo exitoso se loguea en la tabla `expedientes`.
+
+### 5.2 Intereses Aprobados hasta Cobro (`intereses_cobro.py`)
+
+**Caso de uso:** capital único aprobado judicialmente. Los intereses corren desde el día siguiente a la aprobación hasta el efectivo cobro.
+
+**Flujo por pasos:**
+1. **Letrado presentante** — igual que ampliación
+2. **Datos del expediente** — igual que ampliación
+3. **Datos del cálculo:**
+   - Capital aprobado ($)
+   - Fecha de aprobación judicial → T₀ = índice de este día (intereses desde el día siguiente)
+   - Fecha de efectivo cobro → Tₘ = índice de este día
+4. **Calcular** → `calcular_interes_simple(capital, fecha_aprobacion, fecha_cobro, indice)`
+5. **Resultado** — 3 métricas + expander con detalle (T₀, Tₘ, coeficiente)
+6. **Exportar** — Excel `.xlsx` con nombre `intereses_cobro_{expediente}.xlsx`
+
+### 5.3 Ejecución de Sentencia (`ejecucion.py`) — Sprint 3
+
+**Pendiente.** Requerirá:
+- Calendario de 120 días hábiles judiciales (feriados fijos 2020–2028 + tabla `feriados_extra` en DB)
+- Wizard 4 pantallas (datos → tramo A → tramo B → resultado)
+- División automática Tramo A / Tramo B en el día hábil 121
+
+---
+
+## 6. Algoritmo de cálculo
 
 ### Fuente de datos: índice BCRA
 - Archivo: `data/diar_ind.xls` (bundleado en el repo)
 - URL de descarga: `https://www.bcra.gob.ar/Pdfs/PublicacionesEstadisticas/diar_ind.xls`
 - Columna usada: col 9 (índice 0-based), datos desde fila 27
-- Serie: tasa pasiva acumulada (Ley 27.802, art. 55, BCRA Res. 45/26)
+- Serie: tasa pasiva acumulada (Ley 27.802, art. 55) — **índice acumulado**, no tasa porcentual
 
-### Fórmula (BCRA Resolución 45/26)
+### Fórmula (corregida — validada contra CM CABA)
 
 ```
-T0  = índice del día ANTERIOR a fecha_desde
-Tm  = índice del día de pago (fecha_hasta)
+T₀  = índice del día base (ver regla por calculadora)
+Tₘ  = índice del día de pago o cobro efectivo
 
-coeficiente = (100 + Tm) / (100 + T0) - 1
+coeficiente = Tₘ / T₀ - 1          ← índice acumulado puro
 
 interes = capital × coeficiente
 total   = capital + interes
 ```
 
-**T0 es el día anterior a `fecha_desde`**, no el día mismo.  
-Sección C de la Res. 45/26: *"T0 es el valor de la serie correspondiente al día anterior a partir del cual se devengan los intereses"*.
+> ⚠️ **Nota crítica:** la fórmula es `Tₘ/T₀ - 1`, **NO** `(100+Tₘ)/(100+T₀) - 1`.  
+> Los valores del índice BCRA son acumulados en miles (~19.000–25.000). La variante con `+100`  
+> introduce un error sistemático de ~0,16pp. Ver sección 11 (Decisiones técnicas).
 
-### Caso de prueba validado contra calculadora oficial BCRA
+### Regla de T₀ según calculadora
+
+| Calculadora | T₀ | fecha_desde (display) |
+|---|---|---|
+| **Ampliación** (`calcular_fila`) | índice del día **anterior** a `fecha_desde` | 1° del mes siguiente al período |
+| **Intereses hasta Cobro** (`calcular_interes_simple`) | índice del **día de aprobación** | día siguiente a la aprobación |
+
+### Validación contra CM CABA (23/05/2026)
 
 | Campo | Valor |
 |---|---|
-| Capital | $313.665,13 |
-| Desde | 01/02/2024 |
-| Hasta | 03/03/2026 |
-| Tasa acumulada | 94,13% |
-| Interés | **$295.240,88** ✓ (coincide al centavo) |
+| Capital | $15.000.028 |
+| Fecha aprobación | 01/05/2025 |
+| Fecha cobro | 20/05/2026 |
+| T₀ (01/05/2025) | 19.379,0980 |
+| Tₘ (20/05/2026) | 25.582,0246 |
+| Coeficiente Rake | 32,0083% |
+| CM CABA (hasta 21/05/2026) | 32,00% |
+
+Diferencia residual (~0,008pp) = 1 día de fecha (el usuario usó 20/05 en Rake y 21/05 en CM CABA).  
+Con misma fecha, los resultados coinciden al centavo.
 
 ---
 
-## 6. Doctrina de intereses
+## 7. Doctrina de intereses
 
 Cada diferencia mensual de haber es una obligación independiente.  
 Los intereses corren desde el **1° del mes siguiente** al período liquidado.
@@ -215,66 +269,35 @@ Capital = Haber Reajustado − Haber Percibido
 
 ---
 
-## 7. Formatos de entrada soportados
+## 8. Formatos de entrada soportados
 
 | Extensión | Sistema | Capital leído |
 |---|---|---|
-| `.pdf` | BlueCorp | col[3] − col[2] = Reajustado − Percibido |
-| `.docx` | Jauregui | col[3] − col[2] = Reajustado − Percibido |
-| `.xlsx` / `.xls` | Jauregui | col[Reajustado] − col[Percibido] (detectado por nombre) |
+| `.pdf` (BlueCorp) | BlueCorp | col[3] − col[2] = Reajustado − Percibido |
+| `.pdf` (Jauregui) | Jauregui PDF | col[3] − col[2] = Reajustado − Percibido |
+| `.docx` | Jauregui DOCX | col[3] − col[2] = Reajustado − Percibido |
+| `.xlsx` / `.xls` | Jauregui Excel | col[Reajustado] − col[Percibido] (por nombre) |
 | `.csv` | Estándar | columnas `periodo`, `capital`, `fecha_desde` |
 
 ### BlueCorp PDF
 - **Página 1:** texto libre con `"calcularon hasta el DD/MM/YYYY"` → fecha sugerida
 - **Páginas 2+:** tabla de datos (sin límite de páginas)
-- Columnas: `[0]Mes [1]Año [2]Percibido [3]Reajustado [4]DifImporte [5]Dif% [6]Dif-Deducción [7]HAC [8]OS [9]Difer+HAC-OS [10]Capital [11]Interés`
+- Detección: si página 1 contiene `"bluecorp"` → parser BlueCorp; si no → parser Jauregui PDF
 
 ### Jauregui DOCX
-- Tabla principal → fila 78 → tabla anidada (`<w:tbl>`)
-- Columnas: `[0]Mes [1]Año [2]Percibido [3]Reajustado [4]Tope [5]%Conf [6]LuegoTope [7]Difer. [8]SAC [9]Subtotal [10]OS [11]DifNeta [12]Intereses [13]Total [14]Texto`
+- Tabla principal → fila 77: fecha_pago · fila 78: tabla anidada (`<w:tbl>`) con datos
 
-### Jauregui Excel
-- Fila 0: encabezados (primera celda = `"Mes"`)
-- Columnas detectadas por nombre: `Percibido` y `Reajustado`
-- Fallback: columna `Difer.` o `Dif.Neta`
+### Parser de expediente (copy-paste)
+Cada línea del texto pegado se divide por el **primer** `":"` usando `.partition(":")`.  
+Esto preserva los dos puntos en los valores (ej: carátula con `c/` o dependencia con `:` interno).
 
 ---
 
-## 8. Flujo de la aplicación
+## 9. Panel de administración (`admin.py`)
 
-```
-1. Cargar datos
-   ├─ Importar archivo (PDF / DOCX / Excel / CSV)
-   │   └─ parsear_archivo() detecta formato y extrae períodos
-   └─ O cargar/editar manualmente en la tabla (st.data_editor, dinámica)
+Accesible solo para `rol == "admin"` (guard doble: router + guard interno).
 
-2. Configurar fecha hasta
-   └─ Ingresada por el usuario (única para toda la liquidación)
-   └─ Pre-llenada desde el documento si trae fecha sugerida
-
-3. Auto-completar fechas desde (botón)
-   └─ 1° del mes siguiente al período
-
-4. Calcular
-   └─ calcular_intereses(df, indice)
-   └─ Para cada fila: T0 = indice[fecha_desde − 1 día], Tm = indice[fecha_hasta]
-
-5. Ver resultados
-   └─ Tabla: período, índice T0, índice Tm, coeficiente, interés, total
-   └─ Métricas: capital total · intereses totales · total general
-
-6. Exportar
-   └─ Excel (openpyxl): tabla completa con totales
-   └─ PDF judicial A4 landscape (reportlab): encabezado + tabla + totales
-```
-
----
-
-## 9. Panel de administración
-
-Accesible solo para `rol == "admin"` (guard doble: router no registra la página + guard interno en `admin.py`).
-
-### Funciones
+### Sección Usuarios
 | Acción | Función |
 |---|---|
 | Ver todos los usuarios | `list_users()` |
@@ -283,8 +306,12 @@ Accesible solo para `rol == "admin"` (guard doble: router no registra la página
 | Bloquear / Desbloquear | `set_bloqueado(username, bool)` |
 | Crear usuario | `create_user(username, password, nombre, rol, dia_pago)` |
 
-### Métricas de resumen
-Total clientes · Al día · Vencidos · Bloqueados
+### Sección Letrados
+| Acción | Función |
+|---|---|
+| Ver todos (activos + inactivos) | `_list_abogados_all()` (consulta directa, sin filtro activo) |
+| Activar / Desactivar | `set_abogado_activo(id, bool)` |
+| Agregar letrado | `create_abogado(nombre_completo, cuil)` |
 
 ---
 
@@ -293,7 +320,6 @@ Total clientes · Al día · Vencidos · Bloqueados
 ### Railway (producción)
 
 ```json
-// railway.json
 {
   "deploy": {
     "startCommand": "streamlit run app.py --server.port $PORT --server.headless true --server.address 0.0.0.0"
@@ -301,15 +327,15 @@ Total clientes · Al día · Vencidos · Bloqueados
 }
 ```
 
-**Variables de entorno en Railway:**
+**Variables de entorno:**
 
 | Variable | Valor |
 |---|---|
 | `DB_PATH` | `/data/rastrilla.db` |
 
-**Volume Railway:** montado en `/data` → persiste `rastrilla.db` entre reinicios y redeploys.
+**Volume Railway:** montado en `/data` → persiste `rastrilla.db` entre reinicios.
 
-**Nota:** el índice BCRA (`data/diar_ind.xls`) vive en el repo → se mantiene entre deploys. Las actualizaciones del índice desde la app **no persisten** (filesystem efímero de Railway fuera del volume). Para persistir el índice actualizado: moverlo al volume (`/data/diar_ind.xls`) y ajustar `bcra.py`.
+**Nota sobre el índice BCRA:** vive en el repo (`data/diar_ind.xls`) → se mantiene entre deploys. Las actualizaciones desde la app **no persisten** en Railway (filesystem efímero). Para persistir: mover a `/data/diar_ind.xls` y ajustar `bcra.py`.
 
 ### Ramas
 
@@ -321,7 +347,7 @@ Total clientes · Al día · Vencidos · Bloqueados
 ### Dependencias
 
 ```
-streamlit>=1.36      # st.navigation() y st.Page() requieren esta versión mínima
+streamlit>=1.36
 pandas>=2.0
 openpyxl>=3.1
 xlrd>=2.0
@@ -333,56 +359,87 @@ python-docx>=1.1
 
 ---
 
-## 11. Historial de decisiones técnicas
+## 11. Decisiones técnicas
 
-### Fuente Outfit — por qué `button` y `span` están excluidos del selector CSS
-Streamlit renderiza íconos usando **CSS ligatures** con la fuente `Material Symbols Rounded`. El texto "keyboard_double_arrow_left" en un `<button>` o `<span>` con esa fuente se convierte en el ícono visual. Si se aplica `font-family: 'Outfit' !important` a `button` o `span`, la ligature se rompe y el texto aparece literalmente (bug: ícono de colapsar sidebar aparece como texto; bug: ícono de upload aparece duplicado con texto). La solución: solo aplicar Outfit a `body, input, textarea, select, p, li, .stMarkdown`.
+### Fórmula de cálculo: `Tₘ/T₀ - 1` (no `(100+Tₘ)/(100+T₀) - 1`)
 
-### Fórmula de cálculo (BCRA Res. 45/26)
-La fórmula correcta es `(100 + Tm) / (100 + T0) - 1`, no `Tm / T0 - 1`. Más importante: **T0 debe ser el día anterior** a `fecha_desde` (no el día mismo). Para el caso de prueba ($313k, Feb 2024 → Mar 2026), el error de la fórmula vieja era +$1.098,17.
+El índice BCRA Com. 14290 es un **índice acumulado** cuyos valores están en el orden de miles (en mayo 2025: ~19.000; mayo 2026: ~25.000). Para índices de este tipo, la fórmula de retorno es simplemente `Tₘ/T₀ - 1`.
 
-### Capital = Reajustado − Percibido
-Las planillas tienen varias columnas similares con nombres engañosos:
-- `Dif.Neta` / `Capital` del PDF: incluyen el SAC semestral → **incorrecto para intereses mensuales**
-- `Difer.` del DOCX/Excel y `Diferencia - Deducción` del PDF: equivalen a Reajustado − Percibido → **correcto**
+La variante con `+100` sería correcta si los valores fueran tasas porcentuales pequeñas (ej: T=2,5 = "2,5%"). Con valores en miles, el `+100` introduce un error sistemático de ~0,16pp que acumula error significativo sobre capitales grandes. Ejemplo: sobre $15M, el error era ~$23.000.
+
+**Validación:** con `Tₘ/T₀ - 1` obtenemos 32,008% para el par de índices de mayo 2025 → mayo 2026, coincidente con el 32,00% de CM CABA (diferencia residual = 1 día de fecha).
+
+### Fuente Outfit — exclusión de `button` y `span`
+
+Streamlit renderiza íconos usando **CSS ligatures** con `Material Symbols Rounded`. Si se aplica `font-family: 'Outfit'` a `button` o `span`, la ligature se rompe y el texto "keyboard_double_arrow_left" aparece literalmente. Selector seguro: solo `body, input, textarea, select, p, li, .stMarkdown`.
+
+### T₀ y display del índice en Intereses hasta Cobro
+
+En `calcular_interes_simple()`:
+- **T₀** = índice del **día de aprobación** (`fecha_aprobacion`). Los intereses comienzan el día siguiente, pero el índice se toma el mismo día de la aprobación.
+- El resultado incluye tanto `fecha_t0` (día del índice T₀ = aprobación) como `fecha_desde` (día de inicio de intereses = aprobación + 1 día) para mostrar correctamente en el expander.
+
+### Capital = Reajustado − Percibido (no Dif.Neta ni Capital del PDF)
+
+`Dif.Neta` incluye SAC semestral → incorrecto para intereses mensuales.  
+`Capital` del PDF BlueCorp incluye HAC y descuenta OS → incorrecto.  
+La columna correcta es `col[3] − col[2]` en todos los formatos.
 
 ### Multi-página BlueCorp
-El parser original solo leía la página 2. Si la liquidación tiene muchos períodos y el PDF tiene más de 2 páginas se perdían datos. El parser actual itera todas las páginas desde la 2 en adelante.
+El parser itera todas las páginas desde la 2 en adelante (sin límite), evitando pérdida de datos en liquidaciones con muchos períodos.
 
 ### Deduplicación por período
-Jauregui agrega una fila de totales con el mismo Mes/Año que el último período real. Se descarta comparando con un `set` de períodos ya vistos.
+Jauregui agrega una fila de totales con el mismo Mes/Año que el último período real. Se descarta con un `set` de períodos ya vistos.
 
-### st.navigation() — requerimiento ≥ 1.36
-La API `st.navigation()` + `st.Page()` + `position="hidden"` permite:
-- Título de página personalizado (elimina el "app" de la navbar nativa)
-- Navegación por rol (las páginas no registradas simplemente no existen para ese usuario)
-- Control total del sidebar sin depender de la navbar automática de Streamlit
-Requiere `streamlit>=1.36` (actualizado de `>=1.28` en esta iteración).
+### st.navigation() — ≥ 1.36
+Permite título de página personalizado, navegación por rol, y control total del sidebar sin depender de la navbar automática.
 
 ### Sidebar sin wildcard `*`
-El CSS original usaba `[data-testid="stSidebar"] * { color: ... }` lo que sobreescribía el color del ícono SVG del botón toggle y el tamaño de fuente del `<code>` inline. Se reemplazó por selectores específicos: `p, span, small, li, label, .stMarkdown, .stCaption`.
+`[data-testid="stSidebar"] * { color: ... }` rompía el ícono SVG del toggle y el tamaño de `<code>` inline. Se reemplazó por selectores específicos.
 
-### Login responsive — por qué las columnas no colapsan solas
-`st.columns()` en Streamlit siempre es side-by-side, sin media queries automáticas. En mobile, la columna izquierda vacía (placeholder del panel fixed) ocupaba 50% del ancho dejando el formulario en un espacio inutilizable. Solución CSS:
-- `< 767px`: `.login-bg-panel → position: relative` (sale del flujo fixed y pasa a banner superior), columna izquierda `display: none`, columna derecha `min-width: 100%`.
-- El espaciador vertical usa clase `.login-spacer` controlada por CSS (22vh en desktop → 1.5rem en mobile).
+### Login responsive
+`st.columns()` nunca colapsa automáticamente. En mobile: `.login-bg-panel → position: relative` (banner superior), columna izquierda `display: none`, columna derecha `min-width: 100%`.
 
 ---
 
-## 12. Estado actual (rama `dev`) — pending UAT
+## 12. Sprints completados
 
-**Listo para testing de usuario:**
+### Sprint 1 — home + intereses_cobro + abogados (commit `81bd123`)
+- `pages/home.py`: pantalla principal con 3 cards (Ampliación e Intereses operativas, Ejecución próximamente)
+- `pages/intereses_cobro.py`: calculadora capital único — letrado, expediente, capital, fechas, Excel
+- `auth.py`: tabla `abogados` + `list_abogados()` / `create_abogado()` / `set_abogado_activo()`
+- `calculos.py`: `calcular_interes_simple()`
+- `estilo.py`: clases CSS `.calc-card`
+
+### Sprint 2 — ampliacion + expedientes log + admin letrados (commit `9b8c30f`)
+- `pages/ampliacion.py`: calculadora multi-período — letrado, expediente, planilla BlueCorp/Jauregui, fecha_pago, tabla editable, calcular, Excel
+- `auth.py`: tabla `expedientes` + `log_calculo()`
+- `pages/admin.py`: sección Letrados (ver/activar/desactivar/agregar)
+- `pages/home.py`: card Ampliación operativa
+- `pages/calculadora.py`: eliminado (absorbido por `ampliacion.py`)
+
+### Fix fórmula (commit pendiente)
+- `calculos.py`: corrección de `(100+Tₘ)/(100+T₀)-1` → `Tₘ/T₀-1` en `calcular_fila()` y `calcular_interes_simple()`
+- `calculos.py`: `calcular_interes_simple()` ahora retorna `fecha_t0` para display correcto
+- `intereses_cobro.py`: display T₀ corregido (muestra `fecha_t0` = aprobación, no `fecha_desde`)
+
+---
+
+## 13. Estado actual — rama `dev`
+
+### Calculadoras operativas
+- ✅ Intereses Aprobados hasta Cobro — validado contra CM CABA
+- ✅ Ampliación de Ejecución — parsers BlueCorp / Jauregui DOCX / Excel / CSV
+- ⏳ Ejecución de Sentencia — Sprint 3
+
+### Infraestructura
 - ✅ Login responsive (mobile / tablet / desktop)
-- ✅ Navegación por rol (clientes no ven admin)
-- ✅ Logo "⚖️ Rake" clickeable → home
-- ✅ Botón "📊 Calculadora" para volver desde admin
-- ✅ Íconos Material Symbols correctos (flecha sidebar, ícono upload)
-- ✅ Botones sidebar blancos con texto verde oscuro (#052e16)
-- ✅ Panel admin: gestión de usuarios, suscripciones, bloqueos
-- ✅ Cálculo de intereses validado contra calculadora BCRA
-- ✅ Exportación Excel + PDF judicial
-- ✅ Auto-completado de fechas desde períodos
+- ✅ Navegación por rol
+- ✅ Sidebar: logo ⚖️ Rake, botones blancos texto verde oscuro
+- ✅ Panel admin: usuarios + letrados
+- ✅ Log de cálculos en tabla `expedientes`
+- ✅ Índice BCRA actualizable desde la app
 
-**Pendiente hasta que termine el UAT:**
-- ⏳ Pulido fino según feedback de usuarios
-- ⏳ Merge `dev` → `main` + verificación de autodeploy Railway
+### Pendiente para pasar a `main`
+- ⏳ UAT de Ampliación con planillas reales BlueCorp/Jauregui
+- ⏳ Sprint 3: Ejecución de Sentencia + calendario judicial
