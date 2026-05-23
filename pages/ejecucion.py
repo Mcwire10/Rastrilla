@@ -8,7 +8,7 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 
-from auth import list_abogados, list_feriados_extra, log_calculo
+from auth import list_abogados, list_feriados_extra, log_calculo, importar_puentes_anio
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_ejecucion, primer_dia_mes_siguiente
 from calendario import dia_habil_n
@@ -41,6 +41,24 @@ with st.sidebar:
                 st.rerun()
             except Exception as e:
                 st.error(f"Error: {e}")
+
+    _usuario_sidebar = st.session_state.get("usuario", {})
+    if _usuario_sidebar.get("rol") == "admin":
+        if st.button("Actualizar feriados", use_container_width=True):
+            with st.spinner("Importando puentes..."):
+                try:
+                    _anio = date.today().year
+                    _res  = importar_puentes_anio(_anio)
+                    _new  = sum(1 for r in _res if r["nuevo"])
+                    if _new:
+                        st.success(f"{_new} feriado(s) importado(s) para {_anio}.")
+                    elif _res:
+                        st.info(f"Ya estaban cargados ({len(_res)}).")
+                    else:
+                        st.info(f"Sin puentes para {_anio}.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 
 # ── Feriados extra (inhábiles judiciales adicionales) ───────────────────────
