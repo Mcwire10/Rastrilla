@@ -6,7 +6,7 @@ import traceback
 
 import streamlit as st
 
-from auth import get_session_user, init_db, log_error, logout, render_login
+from auth import get_session_user, init_db, log_error, logout, render_login, render_cambio_password
 from estilo import aplicar_estilos
 
 st.set_page_config(
@@ -22,6 +22,11 @@ aplicar_estilos()
 usuario = get_session_user()
 if usuario is None:
     render_login()
+    st.stop()
+
+# ── Primer login: forzar cambio de contraseña ─────────────────────────────────
+if usuario.get("primer_login", 0):
+    render_cambio_password()
     st.stop()
 
 # ── Navegación por rol ────────────────────────────────────────────────────────

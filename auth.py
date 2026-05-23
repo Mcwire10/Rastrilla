@@ -42,18 +42,25 @@ def init_db() -> None:
                 fecha_contrato    TEXT    NOT NULL,
                 dia_pago          INTEGER NOT NULL DEFAULT 1,
                 fecha_ultimo_pago TEXT,
-                bloqueado         INTEGER NOT NULL DEFAULT 0
+                bloqueado         INTEGER NOT NULL DEFAULT 0,
+                primer_login      INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Migración: agregar primer_login a DBs existentes
+        try:
+            c.execute("ALTER TABLE usuarios ADD COLUMN primer_login INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass  # columna ya existe
+
         hoy = date.today().isoformat()
 
         # Eliminar usuario de prueba si existe (setup inicial)
         c.execute("DELETE FROM usuarios WHERE username = 'testuser'")
 
-        for username, password, rol, nombre in [
-            ("admin",    "Admin2025!",  "admin",   "Administrador"),
-            ("gonzalez", "Pndl#R4k3J", "cliente", "GONZALEZ PONDAL JUAN MANUEL"),
-            ("moyano",   "Myn#R4k3M",  "cliente", "MOYANO MATIAS ISMAEL"),
+        for username, password, rol, nombre, primer_login in [
+            ("admin",    "Admin2025!",  "admin",   "Administrador",              0),
+            ("gonzalez", "Pndl#R4k3J", "cliente", "GONZALEZ PONDAL JUAN MANUEL", 1),
+            ("moyano",   "Myn#R4k3M",  "cliente", "MOYANO MATIAS ISMAEL",        1),
         ]:
             existe = c.execute(
                 "SELECT 1 FROM usuarios WHERE username = ?", (username,)
@@ -61,9 +68,10 @@ def init_db() -> None:
             if not existe:
                 c.execute(
                     """INSERT INTO usuarios
-                       (username, password_hash, rol, nombre, fecha_contrato, dia_pago)
-                       VALUES (?, ?, ?, ?, ?, 1)""",
-                    (username, _hash(password), rol, nombre, hoy),
+                       (username, password_hash, rol, nombre, fecha_contrato,
+                        dia_pago, primer_login)
+                       VALUES (?, ?, ?, ?, ?, 1, ?)""",
+                    (username, _hash(password), rol, nombre, hoy, primer_login),
                 )
 
         # ── Abogados ──────────────────────────────────────────────────────────
@@ -399,7 +407,64 @@ def logout() -> None:
     st.rerun()
 
 
+def change_password(username: str, new_password: str) -> None:
+    """Actualiza la contraseña y marca primer_login = 0."""
+    with _conn() as c:
+        c.execute(
+            "UPDATE usuarios SET password_hash = ?, primer_login = 0 WHERE username = ?",
+            (_hash(new_password), username),
+        )
+
+
 # ── UI de login ───────────────────────────────────────────────────────────────
+
+def render_cambio_password() -> None:
+    """
+    Pantalla de cambio de contraseña en primer ingreso.
+    Muestra el panel de marca igual que el login (mismo split-screen CSS).
+    Tras guardar, actualiza session_state y hace rerun → entra directo a la app.
+    """
+    usuario = st.session_state.get("usuario", {})
+    nombre = usuario.get("nombre", "")
+    nombre_corto = nombre.split()[0].capitalize() if nombre else "Usuario"
+
+    st.markdown("""
+<div class="login-bg-panel" aria-hidden="true">
+  <div class="login-brand-eyebrow">Sistema de liquidación</div>
+  <div class="login-brand-name">Rake</div>
+  <div class="login-brand-desc">
+    Intereses moratorios<br>por reajuste previsional
+  </div>
+  <div class="login-brand-tag">Uso interno · Estudio jurídico</div>
+</div>
+""", unsafe_allow_html=True)
+
+    _, col = st.columns([1, 1])
+    with col:
+        st.markdown("<div class='login-spacer'></div>", unsafe_allow_html=True)
+        st.markdown(f"""
+<div class="login-form-area">
+  <p class="login-form-heading">👋 Bienvenido, {nombre_corto}</p>
+  <p class="login-form-sub">Es tu primer ingreso. Creá tu contraseña personal para continuar.</p>
+</div>
+""", unsafe_allow_html=True)
+        with st.form("form_cambio_pass"):
+            nueva    = st.text_input("Nueva contraseña", type="password", placeholder="••••••••")
+            confirma = st.text_input("Confirmar contraseña", type="password", placeholder="••••••••")
+            submitted = st.form_submit_button(
+                "Guardar y continuar", use_container_width=True, type="primary"
+            )
+        if submitted:
+            if len(nueva) < 8:
+                st.error("La contraseña debe tener al menos 8 caracteres.")
+            elif nueva != confirma:
+                st.error("Las contraseñas no coinciden.")
+            else:
+                change_password(usuario["username"], nueva)
+                # Refrescar session_state con los datos actualizados
+                st.session_state["usuario"] = get_user(usuario["username"])
+                st.rerun()
+
 
 def render_login() -> None:
     """
