@@ -23,33 +23,32 @@ if usuario is None:
     st.stop()
 
 # ── Navegación por rol ────────────────────────────────────────────────────────
-calculadora = st.Page("pages/calculadora.py", title="Calculadora", default=True)
-pages = [calculadora]
+home           = st.Page("pages/home.py",             title="Inicio",                 default=True)
+intereses_cobro = st.Page("pages/intereses_cobro.py", title="Intereses hasta Cobro")
+pages = [home, intereses_cobro]
 
 if usuario["rol"] == "admin":
     pages.append(st.Page("pages/admin.py", title="Admin"))
 
 pg = st.navigation(pages, position="hidden")
 
-# ── Logo — tope del sidebar, siempre visible, click = volver a home ───────────
+# ── Logo — tope del sidebar, click = volver al home ──────────────────────────
 with st.sidebar:
-    st.page_link("pages/calculadora.py", label="Rake", icon="⚖️")
+    st.page_link("pages/home.py", label="Rake", icon="⚖️")
 
-# ── Contenido de la página activa (calculadora agrega sección BCRA al sidebar) ─
+# ── Contenido de la página activa ─────────────────────────────────────────────
 pg.run()
 
 # ── Sidebar: navegación + footer ──────────────────────────────────────────────
 with st.sidebar:
     st.divider()
 
-    # Botón de admin solo para el rol admin
     if usuario["rol"] == "admin":
         if st.button("🔧 Administración", key="btn_admin", use_container_width=True):
             st.switch_page("pages/admin.py")
 
-    # Botón siempre visible para volver a la calculadora (útil desde admin)
-    if st.button("📊 Calculadora", key="btn_calc", use_container_width=True):
-        st.switch_page("pages/calculadora.py")
+    if st.button("🏠 Inicio", key="btn_home", use_container_width=True):
+        st.switch_page("pages/home.py")
 
     st.divider()
 

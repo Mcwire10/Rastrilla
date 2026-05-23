@@ -24,7 +24,7 @@ def _conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    """Crea la tabla de usuarios si no existe. Inserta admin y testuser por defecto."""
+    """Crea todas las tablas si no existen e inserta datos por defecto."""
     with _conn() as c:
         c.execute("""
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -53,6 +53,28 @@ def init_db() -> None:
                        (username, password_hash, rol, nombre, fecha_contrato, dia_pago)
                        VALUES (?, ?, ?, ?, ?, 1)""",
                     (username, _hash(password), rol, nombre, hoy),
+                )
+
+        # ── Abogados ──────────────────────────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS abogados (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre_completo  TEXT    NOT NULL,
+                cuil             TEXT    NOT NULL UNIQUE,
+                activo           INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+        for nombre_ab, cuil_ab in [
+            ("GONZALEZ PONDAL JUAN MANUEL", "20/26436117/7"),
+            ("MOYANO MATIAS ISMAEL",         "23-38001381-9"),
+        ]:
+            existe = c.execute(
+                "SELECT 1 FROM abogados WHERE cuil = ?", (cuil_ab,)
+            ).fetchone()
+            if not existe:
+                c.execute(
+                    "INSERT INTO abogados (nombre_completo, cuil) VALUES (?, ?)",
+                    (nombre_ab, cuil_ab),
                 )
 
 
@@ -107,6 +129,32 @@ def set_bloqueado(username: str, bloqueado: bool) -> None:
         c.execute(
             "UPDATE usuarios SET bloqueado = ? WHERE username = ?",
             (int(bloqueado), username),
+        )
+
+
+# ── CRUD abogados ─────────────────────────────────────────────────────────────
+
+def list_abogados() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT * FROM abogados WHERE activo = 1 ORDER BY nombre_completo"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def create_abogado(nombre_completo: str, cuil: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO abogados (nombre_completo, cuil) VALUES (?, ?)",
+            (nombre_completo, cuil),
+        )
+
+
+def set_abogado_activo(abogado_id: int, activo: bool) -> None:
+    with _conn() as c:
+        c.execute(
+            "UPDATE abogados SET activo = ? WHERE id = ?",
+            (int(activo), abogado_id),
         )
 
 

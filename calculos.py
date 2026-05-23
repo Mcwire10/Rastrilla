@@ -41,6 +41,47 @@ def calcular_fila(
     }
 
 
+def calcular_interes_simple(
+    capital: float,
+    fecha_aprobacion: date,
+    fecha_cobro: date,
+    indice: pd.Series,
+) -> dict:
+    """
+    Intereses Aprobados hasta Cobro.
+    T0 = índice del día de aprobación (intereses corren desde el día SIGUIENTE).
+    Tm = índice del día de cobro efectivo.
+    """
+    t0_fecha = pd.Timestamp(fecha_aprobacion)
+    tm_fecha = pd.Timestamp(fecha_cobro)
+    idx_inicial = indice.asof(t0_fecha)
+    idx_final   = indice.asof(tm_fecha)
+
+    if pd.isna(idx_inicial):
+        raise ValueError(
+            f"Sin índice BCRA para {fecha_aprobacion.strftime('%d/%m/%Y')}. "
+            "Actualizá el índice desde el sidebar."
+        )
+    if pd.isna(idx_final):
+        raise ValueError(
+            f"Sin índice BCRA para {fecha_cobro.strftime('%d/%m/%Y')}. "
+            "Actualizá el índice desde el sidebar."
+        )
+
+    coeficiente = (100 + float(idx_final)) / (100 + float(idx_inicial)) - 1
+    interes = round(capital * coeficiente, 2)
+    return {
+        "capital":         capital,
+        "fecha_desde":     (t0_fecha + pd.Timedelta(days=1)).date(),
+        "fecha_hasta":     fecha_cobro,
+        "indice_inicial":  round(float(idx_inicial), 4),
+        "indice_final":    round(float(idx_final), 4),
+        "coeficiente":     round(coeficiente, 6),
+        "interes":         interes,
+        "total":           round(capital + interes, 2),
+    }
+
+
 def calcular_intereses(df: pd.DataFrame, indice: pd.Series) -> pd.DataFrame:
     """
     df debe tener columnas: periodo, capital, fecha_desde, fecha_pago

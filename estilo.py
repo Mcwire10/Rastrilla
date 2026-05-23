@@ -415,6 +415,56 @@ h3 {
 
 
 /* ══════════════════════════════════════════════════════════════════════════════ */
+/*  HOME CARDS — selección de módulo de cálculo                                  */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+.calc-card {
+    background: #ffffff;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 1.75rem 1.5rem 1.25rem;
+    text-align: center;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    margin-bottom: 0.75rem;
+}
+.calc-card:hover {
+    border-color: #16a34a;
+    box-shadow: 0 6px 20px rgba(22, 163, 74, 0.1);
+}
+.calc-card-icon {
+    font-size: 2.25rem;
+    margin-bottom: 0.875rem;
+    display: block;
+}
+.calc-card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #111827;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+    font-family: 'Outfit', sans-serif;
+}
+.calc-card-desc {
+    font-size: 0.8rem;
+    color: #6b7280;
+    line-height: 1.6;
+    font-family: 'Outfit', sans-serif;
+}
+.calc-card-badge {
+    display: inline-block;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: #9ca3af;
+    background: #f3f4f6;
+    border-radius: 999px;
+    padding: 0.2rem 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    margin-top: 0.75rem;
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
 /*  RESPONSIVE — login split-screen adaptable a todos los dispositivos           */
 /* ══════════════════════════════════════════════════════════════════════════════ */
 
