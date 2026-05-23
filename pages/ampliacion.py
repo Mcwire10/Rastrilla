@@ -145,13 +145,6 @@ with col_auto:
         st.session_state.amp_filas = df
         st.rerun()
 
-# Fecha de pago — se aplica a toda la liquidación
-st.session_state.amp_fecha_pago = st.date_input(
-    "Fecha efectiva de pago (se aplica a toda la liquidación)",
-    value=st.session_state.amp_fecha_pago,
-    format="DD/MM/YYYY",
-)
-
 # Tabla editable para revisión y corrección manual
 st.caption("Revisá y corregí los períodos antes de calcular")
 df_editor = st.data_editor(
@@ -172,6 +165,13 @@ df_editor = st.data_editor(
     key="amp_editor_filas",
 )
 st.session_state.amp_filas = df_editor
+
+# Fecha de pago — se ingresa manualmente después de revisar la planilla
+st.session_state.amp_fecha_pago = st.date_input(
+    "Fecha efectiva de pago (se aplica a toda la liquidación)",
+    value=st.session_state.amp_fecha_pago,
+    format="DD/MM/YYYY",
+)
 
 st.divider()
 
