@@ -29,14 +29,26 @@ st.caption("Cada descarga de Excel, PDF o DOCX cuenta como un documento generado
 
 _uso = get_uso_mensual(meses=12)
 
-# Métricas rápidas
+# Métricas globales
 _m1, _m2, _m3 = st.columns(3)
 _m1.metric("Documentos este mes",  _uso["total_mes"])
 _m2.metric("Total histórico",      _uso["total_hist"])
 _m3.metric("Más activo",           _uso["top_usuario"] or "—")
 
+# Métricas por usuario
+if _uso["resumen_usuarios"]:
+    st.markdown("**Consumo por usuario**")
+    _ucols = st.columns(len(_uso["resumen_usuarios"]))
+    for _col, _u in zip(_ucols, _uso["resumen_usuarios"]):
+        _col.container(border=True).markdown(
+            f"**{_u['username']}**  \n"
+            f"Este mes: **{_u['mes']}**  \n"
+            f"Total: **{_u['total']}**"
+        )
+
 # Gráfico mensual por calculadora
 if _uso["por_mes_calc"]:
+    st.markdown("**Documentos por mes y calculadora**")
     _df_chart = pd.DataFrame(_uso["por_mes_calc"])
     _df_chart["calculadora"] = _df_chart["calculadora"].map(
         lambda x: _CALC_LABELS.get(x, x)
@@ -48,7 +60,6 @@ if _uso["por_mes_calc"]:
         )
         .sort_index()
     )
-    # Asegurar que existan las 3 columnas aunque haya meses sin datos de alguna
     for _label in _CALC_LABELS.values():
         if _label not in _df_pivot.columns:
             _df_pivot[_label] = 0
@@ -57,24 +68,24 @@ if _uso["por_mes_calc"]:
 else:
     st.info("Todavía no hay documentos generados.")
 
-# Tabla detalle por usuario
+# Tabla detalle por usuario — siempre visible
 if _uso["por_usuario"]:
-    with st.expander("Ver desglose por usuario y mes", expanded=False):
-        _df_det = pd.DataFrame(_uso["por_usuario"])
-        _df_det["calculadora"] = _df_det["calculadora"].map(lambda x: _CALC_LABELS.get(x, x))
-        _df_det["tipo_doc"]    = _df_det["tipo_doc"].map(lambda x: _DOC_LABELS.get(x, x))
-        _df_det = _df_det.rename(columns={
-            "mes":         "Mes",
-            "username":    "Usuario",
-            "calculadora": "Calculadora",
-            "tipo_doc":    "Tipo",
-            "cantidad":    "Docs",
-        })
-        st.dataframe(
-            _df_det[["Mes", "Usuario", "Calculadora", "Tipo", "Docs"]],
-            use_container_width=True,
-            hide_index=True,
-        )
+    st.markdown("**Desglose por usuario, mes y tipo de documento**")
+    _df_det = pd.DataFrame(_uso["por_usuario"])
+    _df_det["calculadora"] = _df_det["calculadora"].map(lambda x: _CALC_LABELS.get(x, x))
+    _df_det["tipo_doc"]    = _df_det["tipo_doc"].map(lambda x: _DOC_LABELS.get(x, x))
+    _df_det = _df_det.rename(columns={
+        "mes":         "Mes",
+        "username":    "Usuario",
+        "calculadora": "Calculadora",
+        "tipo_doc":    "Tipo",
+        "cantidad":    "Docs",
+    })
+    st.dataframe(
+        _df_det[["Mes", "Usuario", "Calculadora", "Tipo", "Docs"]],
+        use_container_width=True,
+        hide_index=True,
+    )
 
 st.divider()
 

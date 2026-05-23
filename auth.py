@@ -445,12 +445,24 @@ def get_uso_mensual(meses: int = 12) -> dict:
         """).fetchone()
         top_usuario = f"{top_row['username']} ({top_row['n']})" if top_row else None
 
+        # Totales por usuario: este mes + histórico
+        resumen_usuarios = c.execute("""
+            SELECT
+                username,
+                SUM(CASE WHEN strftime('%Y-%m', timestamp) = ? THEN 1 ELSE 0 END) AS mes,
+                COUNT(*) AS total
+            FROM uso_documentos
+            GROUP BY username
+            ORDER BY total DESC
+        """, (mes_actual,)).fetchall()
+
     return {
-        "por_mes_calc": [dict(r) for r in por_mes_calc],
-        "por_usuario":  [dict(r) for r in por_usuario],
-        "total_mes":    total_mes,
-        "total_hist":   total_hist,
-        "top_usuario":  top_usuario,
+        "por_mes_calc":      [dict(r) for r in por_mes_calc],
+        "por_usuario":       [dict(r) for r in por_usuario],
+        "total_mes":         total_mes,
+        "total_hist":        total_hist,
+        "top_usuario":       top_usuario,
+        "resumen_usuarios":  [dict(r) for r in resumen_usuarios],
     }
 
 
