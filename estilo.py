@@ -13,6 +13,11 @@ _CSS = """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
 
+/* Ocultar menú hamburguesa (⋮) y footer "Made with Streamlit" */
+[data-testid="stMainMenu"] { display: none !important; }
+#MainMenu                   { visibility: hidden !important; }
+footer                      { visibility: hidden !important; }
+
 /* ── Tipografía global — Outfit (taste-skill: Inter banned) ─────────────────── */
 /* IMPORTANT: do NOT include button/span/svg here — breaks Material Symbols icons */
 body, input, textarea, select, p, li, .stMarkdown {
