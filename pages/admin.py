@@ -4,9 +4,12 @@ El router (app.py) ya hizo auth guard; aquí solo comprobamos rol admin.
 """
 import streamlit as st
 
+import pandas as pd
+
 from auth import (
     list_abogados, create_abogado, set_abogado_activo,
     list_errores, clear_errores,
+    get_uso_mensual, _CALC_LABELS, _DOC_LABELS,
 )
 
 usuario = st.session_state.get("usuario")
@@ -18,6 +21,61 @@ if usuario is None or usuario["rol"] != "admin":
 # ── Header ────────────────────────────────────────────────────────────────────
 st.title("🔧 Panel de Administración")
 st.caption(f"Sesión: **{usuario['nombre']}** ({usuario['username']})")
+st.divider()
+
+# ── Panel de uso ─────────────────────────────────────────────────────────────
+st.subheader("📊 Uso de calculadoras")
+st.caption("Cada descarga de Excel, PDF o DOCX cuenta como un documento generado.")
+
+_uso = get_uso_mensual(meses=12)
+
+# Métricas rápidas
+_m1, _m2, _m3 = st.columns(3)
+_m1.metric("Documentos este mes",  _uso["total_mes"])
+_m2.metric("Total histórico",      _uso["total_hist"])
+_m3.metric("Más activo",           _uso["top_usuario"] or "—")
+
+# Gráfico mensual por calculadora
+if _uso["por_mes_calc"]:
+    _df_chart = pd.DataFrame(_uso["por_mes_calc"])
+    _df_chart["calculadora"] = _df_chart["calculadora"].map(
+        lambda x: _CALC_LABELS.get(x, x)
+    )
+    _df_pivot = (
+        _df_chart.pivot_table(
+            index="mes", columns="calculadora",
+            values="cantidad", aggfunc="sum", fill_value=0,
+        )
+        .sort_index()
+    )
+    # Asegurar que existan las 3 columnas aunque haya meses sin datos de alguna
+    for _label in _CALC_LABELS.values():
+        if _label not in _df_pivot.columns:
+            _df_pivot[_label] = 0
+    _df_pivot = _df_pivot[sorted(_df_pivot.columns)]
+    st.bar_chart(_df_pivot, height=220)
+else:
+    st.info("Todavía no hay documentos generados.")
+
+# Tabla detalle por usuario
+if _uso["por_usuario"]:
+    with st.expander("Ver desglose por usuario y mes", expanded=False):
+        _df_det = pd.DataFrame(_uso["por_usuario"])
+        _df_det["calculadora"] = _df_det["calculadora"].map(lambda x: _CALC_LABELS.get(x, x))
+        _df_det["tipo_doc"]    = _df_det["tipo_doc"].map(lambda x: _DOC_LABELS.get(x, x))
+        _df_det = _df_det.rename(columns={
+            "mes":         "Mes",
+            "username":    "Usuario",
+            "calculadora": "Calculadora",
+            "tipo_doc":    "Tipo",
+            "cantidad":    "Docs",
+        })
+        st.dataframe(
+            _df_det[["Mes", "Usuario", "Calculadora", "Tipo", "Docs"]],
+            use_container_width=True,
+            hide_index=True,
+        )
+
 st.divider()
 
 # ── Letrados / Abogados ───────────────────────────────────────────────────────

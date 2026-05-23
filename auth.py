@@ -147,6 +147,17 @@ def init_db() -> None:
             )
         """)
 
+        # ── Uso de calculadoras (documentos generados) ────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS uso_documentos (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp    TEXT    NOT NULL,
+                username     TEXT    NOT NULL,
+                calculadora  TEXT    NOT NULL,
+                tipo_doc     TEXT    NOT NULL
+            )
+        """)
+
 
 # ── Password ──────────────────────────────────────────────────────────────────
 
@@ -358,6 +369,89 @@ def clear_errores() -> None:
     """Elimina todos los registros de la tabla errores."""
     with _conn() as c:
         c.execute("DELETE FROM errores")
+
+
+# ── Uso de calculadoras ───────────────────────────────────────────────────────
+
+_CALC_LABELS = {
+    "ejecucion":  "Ejecución",
+    "ampliacion": "Ampliación",
+    "cobro":      "Hasta Cobro",
+}
+_DOC_LABELS = {
+    "excel": "Excel",
+    "pdf":   "PDF",
+    "docx":  "DOCX",
+}
+
+
+def log_uso(username: str, calculadora: str, tipo_doc: str) -> None:
+    """Registra la generación de un documento. Silencioso ante cualquier error."""
+    try:
+        ts = datetime.now().isoformat(sep=" ", timespec="seconds")
+        with _conn() as c:
+            c.execute(
+                "INSERT INTO uso_documentos (timestamp, username, calculadora, tipo_doc) "
+                "VALUES (?, ?, ?, ?)",
+                (ts, username, calculadora, tipo_doc),
+            )
+    except Exception:
+        pass
+
+
+def get_uso_mensual(meses: int = 12) -> dict:
+    """
+    Retorna estadísticas de uso para el panel de administración.
+    {
+      'por_mes_calc':  [(mes, calculadora, cantidad), ...],   ← últimos `meses` meses
+      'por_usuario':   [(mes, username, calculadora, tipo_doc, cantidad), ...],
+      'total_mes':     int,
+      'total_hist':    int,
+      'top_usuario':   str | None,
+    }
+    """
+    mes_actual = datetime.now().strftime("%Y-%m")
+    with _conn() as c:
+        por_mes_calc = c.execute("""
+            SELECT strftime('%Y-%m', timestamp) AS mes,
+                   calculadora, COUNT(*) AS cantidad
+            FROM uso_documentos
+            WHERE mes >= date('now', ?)
+            GROUP BY mes, calculadora
+            ORDER BY mes ASC
+        """, (f"-{meses} months",)).fetchall()
+
+        por_usuario = c.execute("""
+            SELECT strftime('%Y-%m', timestamp) AS mes,
+                   username, calculadora, tipo_doc, COUNT(*) AS cantidad
+            FROM uso_documentos
+            WHERE mes >= date('now', ?)
+            GROUP BY mes, username, calculadora, tipo_doc
+            ORDER BY mes DESC, username
+        """, (f"-{meses} months",)).fetchall()
+
+        total_mes = c.execute(
+            "SELECT COUNT(*) FROM uso_documentos "
+            "WHERE strftime('%Y-%m', timestamp) = ?", (mes_actual,)
+        ).fetchone()[0]
+
+        total_hist = c.execute(
+            "SELECT COUNT(*) FROM uso_documentos"
+        ).fetchone()[0]
+
+        top_row = c.execute("""
+            SELECT username, COUNT(*) AS n FROM uso_documentos
+            GROUP BY username ORDER BY n DESC LIMIT 1
+        """).fetchone()
+        top_usuario = f"{top_row['username']} ({top_row['n']})" if top_row else None
+
+    return {
+        "por_mes_calc": [dict(r) for r in por_mes_calc],
+        "por_usuario":  [dict(r) for r in por_usuario],
+        "total_mes":    total_mes,
+        "total_hist":   total_hist,
+        "top_usuario":  top_usuario,
+    }
 
 
 
