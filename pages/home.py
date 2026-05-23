@@ -35,9 +35,11 @@ with col2:
     por cada período de la planilla.<br>
     Tasa pasiva BCRA.
   </div>
-  <span class="calc-card-badge">Próximamente</span>
 </div>
 """, unsafe_allow_html=True)
+    st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
+    if st.button("▶ Iniciar", key="btn_ampliacion", use_container_width=True, type="primary"):
+        st.switch_page("pages/ampliacion.py")
 
 with col3:
     st.markdown("""

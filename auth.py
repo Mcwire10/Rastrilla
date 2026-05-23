@@ -77,6 +77,22 @@ def init_db() -> None:
                     (nombre_ab, cuil_ab),
                 )
 
+        # ── Expedientes (log de cálculos) ─────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS expedientes (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo          TEXT    NOT NULL,
+                letrado_id    INTEGER,
+                expediente    TEXT,
+                caratula      TEXT,
+                capital_total REAL,
+                interes_total REAL,
+                total         REAL,
+                fecha_calculo TEXT    NOT NULL,
+                FOREIGN KEY (letrado_id) REFERENCES abogados(id)
+            )
+        """)
+
 
 # ── Password ──────────────────────────────────────────────────────────────────
 
@@ -155,6 +171,29 @@ def set_abogado_activo(abogado_id: int, activo: bool) -> None:
         c.execute(
             "UPDATE abogados SET activo = ? WHERE id = ?",
             (int(activo), abogado_id),
+        )
+
+
+# ── CRUD expedientes ──────────────────────────────────────────────────────────
+
+def log_calculo(
+    tipo: str,
+    letrado_id: int | None,
+    expediente: str,
+    caratula: str,
+    capital_total: float,
+    interes_total: float,
+    total: float,
+) -> None:
+    """Registra un cálculo realizado en el log de expedientes."""
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO expedientes
+               (tipo, letrado_id, expediente, caratula,
+                capital_total, interes_total, total, fecha_calculo)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tipo, letrado_id, expediente, caratula,
+             capital_total, interes_total, total, date.today().isoformat()),
         )
 
 

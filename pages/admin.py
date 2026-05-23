@@ -6,7 +6,10 @@ from datetime import date
 
 import streamlit as st
 
-from auth import create_user, list_users, registrar_pago, set_bloqueado
+from auth import (
+    create_user, list_users, registrar_pago, set_bloqueado,
+    list_abogados, create_abogado, set_abogado_activo,
+)
 
 usuario = st.session_state.get("usuario")
 
@@ -98,6 +101,58 @@ c1.metric("Total clientes", len(clientes))
 c2.metric("Al día ✅", al_dia)
 c3.metric("Vencidos 🟠", vencidos)
 c4.metric("Bloqueados 🔴", bloq)
+
+st.divider()
+
+# ── Letrados / Abogados ───────────────────────────────────────────────────────
+st.subheader("Letrados")
+
+def _list_abogados_all() -> list[dict]:
+    """Lista todos los abogados (activos e inactivos) para el panel admin."""
+    from auth import _conn
+    with _conn() as c:
+        rows = c.execute("SELECT * FROM abogados ORDER BY nombre_completo").fetchall()
+        return [dict(r) for r in rows]
+
+todos_abogados = _list_abogados_all()
+
+if not todos_abogados:
+    st.info("No hay letrados registrados aún.")
+else:
+    for ab in todos_abogados:
+        with st.container(border=True):
+            col_ab_info, col_ab_toggle = st.columns([5, 2])
+            with col_ab_info:
+                estado_ab = "✅ Activo" if ab["activo"] else "🔴 Inactivo"
+                st.markdown(f"**{ab['nombre_completo']}** &nbsp; {estado_ab}")
+                st.caption(f"CUIL: {ab['cuil']}")
+            with col_ab_toggle:
+                if ab["activo"]:
+                    if st.button("🔴 Desactivar", key=f"ab_des_{ab['id']}", use_container_width=True):
+                        set_abogado_activo(ab["id"], False)
+                        st.rerun()
+                else:
+                    if st.button("✅ Activar", key=f"ab_act_{ab['id']}", use_container_width=True):
+                        set_abogado_activo(ab["id"], True)
+                        st.rerun()
+
+st.markdown("**Agregar letrado**")
+with st.form("nuevo_abogado"):
+    col_ab1, col_ab2 = st.columns(2)
+    with col_ab1:
+        nuevo_nombre = st.text_input("Nombre completo (en mayúsculas)", placeholder="APELLIDO NOMBRE")
+    with col_ab2:
+        nuevo_cuil = st.text_input("CUIL", placeholder="20/12345678/9")
+    if st.form_submit_button("Agregar letrado", use_container_width=True):
+        if not nuevo_nombre.strip() or not nuevo_cuil.strip():
+            st.error("Completá nombre y CUIL.")
+        else:
+            try:
+                create_abogado(nuevo_nombre.strip().upper(), nuevo_cuil.strip())
+                st.success(f"Letrado **{nuevo_nombre.upper()}** agregado.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error: {e}")
 
 st.divider()
 
