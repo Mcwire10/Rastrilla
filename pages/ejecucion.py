@@ -342,7 +342,7 @@ if st.session_state.get("eje_resultado") is not None:
         st.info("No hay períodos en Tramo B para este rango de fechas.")
         t_tot_b = 0.0
 
-    # ── Total general ──────────────────────────────────────────────────────────
+    # ── Resultado final ────────────────────────────────────────────────────────
     st.divider()
     _int_a  = float(res_a.get("interes", 0) or 0)
     _tot_a  = float(res_a.get("total",   0) or 0)
@@ -353,11 +353,28 @@ if st.session_state.get("eje_resultado") is not None:
     _int_total  = _int_a + _int_b
     _gran_total = _tot_a + _tot_b
 
-    st.markdown("#### Total general")
+    # Caja destacada: resultado final + fecha hasta
+    st.markdown(f"""
+<div style="background:#f0fdf4; border:2px solid #16a34a; border-radius:12px;
+            padding:1.5rem 2rem; margin:0.5rem 0 1.5rem 0;">
+  <div style="font-size:0.75rem; font-weight:700; color:#16a34a;
+              text-transform:uppercase; letter-spacing:0.08em; margin-bottom:0.4rem;">
+    Resultado final — Suma intereses moratorios Tramo A + Tramo B
+  </div>
+  <div style="font-size:2.2rem; font-weight:700; color:#052e16; line-height:1.1;">
+    {fmt_ar(_int_total)}
+  </div>
+  <div style="margin-top:1rem; font-size:0.85rem; color:#374151;">
+    Calculado hasta: <strong>{res['fecha_hasta'].strftime('%d/%m/%Y')}</strong>
+    &nbsp;—&nbsp; efectivo pago conforme recibo que consta en autos
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     cg1, cg2, cg3 = st.columns(3)
-    cg1.metric("Capital total",              fmt_ar(_cap_total))
-    cg2.metric("Total intereses moratorios", fmt_ar(_int_total))
-    cg3.metric("Gran total",                 fmt_ar(_gran_total))
+    cg1.metric("Capital total",        fmt_ar(_cap_total))
+    cg2.metric("Intereses Tramo A",    fmt_ar(_int_a))
+    cg3.metric("Intereses Tramo B",    fmt_ar(_int_b))
 
     # ── Exportar ──────────────────────────────────────────────────────────────
     st.subheader("7. Exportar")

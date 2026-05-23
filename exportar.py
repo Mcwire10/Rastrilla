@@ -143,10 +143,26 @@ def exportar_excel_ejecucion(resultado: dict) -> bytes:
             df_calc = pd.DataFrame([{"Error": res_a["error"]}])
         df_calc.to_excel(writer, index=False, sheet_name="Tramo A", startrow=startrow_calc)
 
+        # Tabla 3: resultado final (intereses A + B) y fecha hasta
+        int_a_xls = float(res_a.get("interes", 0) or 0) if not res_a.get("error") else 0.0
+        int_b_xls = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
+        startrow_final = startrow_calc + len(df_calc) + 3
+        df_final = pd.DataFrame([
+            {
+                "Concepto": "RESULTADO FINAL — Suma intereses moratorios Tramo A + Tramo B",
+                "Valor":    int_a_xls + int_b_xls,
+            },
+            {
+                "Concepto": "Calculado hasta — Efectivo pago conforme recibo que consta en autos",
+                "Valor":    fecha_hasta.strftime("%d/%m/%Y"),
+            },
+        ])
+        df_final.to_excel(writer, index=False, sheet_name="Tramo A", startrow=startrow_final)
+
         ws_a = writer.sheets["Tramo A"]
         for col in ws_a.columns:
             max_len = max(len(str(cell.value or "")) for cell in col)
-            ws_a.column_dimensions[col[0].column_letter].width = min(max_len + 3, 35)
+            ws_a.column_dimensions[col[0].column_letter].width = min(max_len + 3, 55)
 
         # ── Hoja Tramo B ──────────────────────────────────────────────────────
         if not res_b.empty:
@@ -331,6 +347,42 @@ def exportar_pdf_ejecucion(
         story.append(t_b)
     else:
         story.append(Paragraph("No hay períodos en Tramo B.", styles["Normal"]))
+
+    # ── Resultado final ──────────────────────────────────────────────────────────
+    story.append(Spacer(1, 0.6 * cm))
+    int_a_val = float(resultado.get("resultado_a", {}).get("interes", 0) or 0)
+    int_b_val = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
+    int_total = int_a_val + int_b_val
+
+    rows_final = [
+        [
+            "RESULTADO FINAL — Suma intereses moratorios Tramo A + Tramo B",
+            f"$ {_fmt(int_total)}",
+        ],
+        [
+            "Calculado hasta — Efectivo pago conforme recibo que consta en autos",
+            fecha_hasta.strftime("%d/%m/%Y"),
+        ],
+    ]
+    available_w = 27.7 * cm
+    t_final = Table(rows_final, colWidths=[available_w * 0.72, available_w * 0.28])
+    t_final.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#052e16")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0),  10),
+        ("BACKGROUND",    (0, 1), (-1, 1),  colors.HexColor("#f0fdf4")),
+        ("TEXTCOLOR",     (0, 1), (-1, 1),  colors.HexColor("#052e16")),
+        ("FONTNAME",      (0, 1), (-1, 1),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 1), (-1, 1),  9),
+        ("ALIGN",         (1, 0), (1, -1),  "RIGHT"),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#16a34a")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+    ]))
+    story.append(t_final)
 
     doc.build(story)
     return buf.getvalue()
