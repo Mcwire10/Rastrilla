@@ -97,15 +97,21 @@ def calcular_ejecucion(
     """
     Calcula intereses para Ejecución de Sentencia (120 días hábiles judiciales).
 
-    Tramo A: períodos cuya fecha_desde ≤ dia_120.
-             Los capitales se suman y se calcula UN único interés desde dia_121.
-             Si dia_120 cae dentro de un mes → split proporcional de ese capital.
-    Tramo B: períodos con fecha_desde > dia_120.
-             Igual a Ampliación: cada período corre desde su propia fecha_desde.
+    La clasificación y el split proporcional se basan en el MES DEL PERÍODO (MM/AAAA),
+    no en la fecha de inicio de intereses (fecha_desde).
+
+    Tramo A: períodos cuyo mes cae completamente dentro del plazo de 120 días.
+             Los capitales se suman → un único interés desde dia_121 hasta fecha_hasta.
+    Split:   cuando dia_120 cae dentro del mes del período → split proporcional
+             sobre los días del mes del período.
+             capital_a = capital × días(inicio_período → dia_120) / días_del_mes
+             El Tramo B de ese período sigue usando su propia fecha_desde (1° mes siguiente).
+    Tramo B: períodos cuyo mes empieza después de dia_120.
+             Igual a Ampliación: cada período corre desde su fecha_desde.
 
     Parameters
     ----------
-    df_planilla   : DataFrame con columnas periodo, capital, fecha_desde
+    df_planilla   : DataFrame con columnas periodo (MM/AAAA), capital, fecha_desde
     fecha_devolucion : fecha desde la que se cuentan los 120 días hábiles
     fecha_hasta   : fecha efectiva de pago (extremo final de todos los intereses)
     indice        : Serie BCRA (asof)
@@ -118,29 +124,38 @@ def calcular_ejecucion(
     filas_b: list[dict] = []
 
     for _, row in df_planilla.iterrows():
-        periodo = row["periodo"]
+        periodo = str(row["periodo"])  # "MM/AAAA"
         capital = float(row["capital"])
         fd = row["fecha_desde"]
         fecha_desde: date = fd.date() if hasattr(fd, "date") else fd
 
-        fin_mes = fin_de_mes(fecha_desde)
+        # Determinar inicio y fin del MES DEL PERÍODO (no del mes de fecha_desde)
+        try:
+            mes_p, anio_p = int(periodo[:2]), int(periodo[3:])
+            inicio_periodo = date(anio_p, mes_p, 1)
+            fin_periodo    = fin_de_mes(inicio_periodo)
+        except (ValueError, IndexError):
+            # Si el formato de periodo es inesperado, usar fecha_desde como fallback
+            inicio_periodo = fecha_desde
+            fin_periodo    = fin_de_mes(fecha_desde)
 
-        if fecha_desde > dia_120:
-            # Todo en Tramo B
+        if inicio_periodo > dia_120:
+            # El período empieza después del día 120 → todo Tramo B
             capital_a, capital_b = 0.0, capital
-        elif fin_mes <= dia_120:
-            # Todo en Tramo A (el mes entero cae dentro de los 120 días)
+        elif fin_periodo <= dia_120:
+            # El período termina en o antes del día 120 → todo Tramo A
             capital_a, capital_b = capital, 0.0
         else:
-            # Día 120 cae dentro del mes → split proporcional
-            dias_en_a   = (dia_120 - fecha_desde).days + 1
-            dias_totales = (fin_mes - fecha_desde).days + 1
+            # Día 120 cae dentro del mes del período → split proporcional
+            dias_en_a    = (dia_120 - inicio_periodo).days + 1
+            dias_totales = (fin_periodo - inicio_periodo).days + 1
             capital_a = round(capital * dias_en_a / dias_totales, 2)
             capital_b = round(capital - capital_a, 2)
 
         if capital_a > 0:
             filas_a.append({"periodo": periodo, "capital": capital_a, "fecha_desde": fecha_desde})
         if capital_b > 0:
+            # fecha_desde = 1° del mes siguiente al período (intereses Tramo B desde ahí)
             filas_b.append({"periodo": periodo, "capital": capital_b, "fecha_desde": fecha_desde})
 
     # ── Tramo A: capital acumulado, interés único desde dia_121 ──────────────
