@@ -11,6 +11,7 @@ import streamlit as st
 from auth import list_abogados
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_interes_simple
+from exportar import exportar_pdf
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
@@ -173,35 +174,61 @@ if st.session_state.get("resultado_cobro"):
     # ── Exportar ──────────────────────────────────────────────────────────────
     st.subheader("5. Exportar")
 
-    # Construir DataFrame de exportación
     caratula = exp.get("Carátula", exp.get("Caratula", ""))
     expediente_num = exp.get("Expediente", "")
+    nombre_base = expediente_num.replace("/", "-") or "liquidacion"
 
+    # Excel — formato detallado con letrado, carátula y todos los campos
     df_exp = pd.DataFrame([{
-        "Letrado":              abogado["nombre_completo"],
-        "CUIL":                 abogado["cuil"],
-        "Carátula":             caratula,
-        "Expediente":           expediente_num,
-        "Capital aprobado ($)": res["capital"],
-        "Intereses desde":      res["fecha_desde"].strftime("%d/%m/%Y"),
-        "Intereses hasta":      res["fecha_hasta"].strftime("%d/%m/%Y"),
-        "Índice T₀":            res["indice_inicial"],
-        "Índice Tₘ":            res["indice_final"],
-        "Coeficiente":          res["coeficiente"],
+        "Letrado":               abogado["nombre_completo"],
+        "CUIL":                  abogado["cuil"],
+        "Carátula":              caratula,
+        "Expediente":            expediente_num,
+        "Capital aprobado ($)":  res["capital"],
+        "Intereses desde":       res["fecha_desde"].strftime("%d/%m/%Y"),
+        "Intereses hasta":       res["fecha_hasta"].strftime("%d/%m/%Y"),
+        "Índice T₀":             res["indice_inicial"],
+        "Índice Tₘ":             res["indice_final"],
+        "Coeficiente":           res["coeficiente"],
         "Interés moratorio ($)": res["interes"],
-        "Total ($)":            res["total"],
+        "Total ($)":             res["total"],
     }])
-
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df_exp.to_excel(writer, index=False, sheet_name="Intereses hasta Cobro")
     xlsx_bytes = output.getvalue()
 
-    nombre_archivo = f"intereses_cobro_{expediente_num.replace('/', '-') or 'liquidacion'}.xlsx"
-    st.download_button(
-        "⬇ Descargar Excel",
-        data=xlsx_bytes,
-        file_name=nombre_archivo,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+    # PDF — fila única compatible con exportar_pdf()
+    df_pdf = pd.DataFrame([{
+        "periodo":        f"Aprobado {res['fecha_t0'].strftime('%d/%m/%Y')}",
+        "fecha_desde":    pd.Timestamp(res["fecha_desde"]),
+        "fecha_pago":     pd.Timestamp(res["fecha_hasta"]),
+        "capital":        res["capital"],
+        "indice_inicial": res["indice_inicial"],
+        "indice_final":   res["indice_final"],
+        "coeficiente":    res["coeficiente"],
+        "interes":        res["interes"],
+        "total":          res["total"],
+    }])
+    pdf_bytes = exportar_pdf(
+        df_pdf,
+        titulo="INTERESES APROBADOS HASTA COBRO — DOCTRINA RASTRILLA · VEGA",
     )
+
+    col_xl, col_pdf = st.columns(2)
+    with col_xl:
+        st.download_button(
+            "⬇ Descargar Excel",
+            data=xlsx_bytes,
+            file_name=f"intereses_cobro_{nombre_base}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+    with col_pdf:
+        st.download_button(
+            "⬇ Descargar PDF",
+            data=pdf_bytes,
+            file_name=f"intereses_cobro_{nombre_base}.pdf",
+            mime="application/pdf",
+            use_container_width=True,
+        )
