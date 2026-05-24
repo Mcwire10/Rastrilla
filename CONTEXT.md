@@ -17,6 +17,7 @@
 | **Repo** | `https://github.com/Mcwire10/Rastrilla` (privado) |
 | **Rama activa** | `dev` — pendiente merge a `main` tras UAT completo |
 | **Stack** | Python 3.11 · Streamlit ≥ 1.36 · SQLite · pandas · pdfplumber · python-docx · reportlab · openpyxl |
+| **Checkpoint** | `65461f3` — rama `dev` — Sprint 4 completo (escritos DOCX + panel de uso + admin pass) |
 
 ---
 
@@ -31,13 +32,13 @@ rastrilla/
 ├── calculos.py               # Motor de cálculo puro (sin UI)
 ├── calendario.py             # Calendario judicial: días hábiles, feriados, ferias
 ├── parsear_pdf.py            # Parsers: BlueCorp PDF, Jauregui DOCX/Excel/CSV
-├── exportar.py               # Exportación Excel (.xlsx) y PDF (reportlab)
+├── exportar.py               # Exportación Excel (.xlsx), PDF (reportlab) y DOCX (python-docx)
 ├── pages/
 │   ├── home.py               # Pantalla principal: 3 cards de calculadoras (todas activas)
 │   ├── ejecucion.py          # Calculadora: Ejecución de Sentencia (Tramo A / Tramo B)
 │   ├── ampliacion.py         # Calculadora: Ampliación de Ejecución (multi-período)
 │   ├── intereses_cobro.py    # Calculadora: Intereses Aprobados hasta Cobro
-│   └── admin.py              # Panel admin: usuarios + letrados + feriados_extra
+│   └── admin.py              # Panel admin: uso de calculadoras + letrados + log errores + cambio pass
 ├── data/
 │   └── diar_ind.xls          # Índice BCRA (diario, actualizable desde la app)
 ├── .streamlit/
@@ -217,6 +218,20 @@ CREATE TABLE errores (
 )
 ```
 
+### Tabla `uso_documentos` (tracking de descargas)
+```sql
+CREATE TABLE uso_documentos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp   TEXT    NOT NULL,              -- ISO datetime "YYYY-MM-DD HH:MM:SS"
+    username    TEXT    NOT NULL,
+    calculadora TEXT    NOT NULL,              -- 'ejecucion' | 'ampliacion' | 'cobro'
+    tipo_doc    TEXT    NOT NULL               -- 'excel' | 'pdf' | 'docx'
+)
+```
+
+Se registra **cada vez que el usuario hace clic en un botón de descarga** (Excel, PDF o DOCX).
+El panel Admin muestra métricas mensuales por usuario y calculadora.
+
 ### Funciones en `auth.py`
 ```python
 # Usuarios
@@ -242,6 +257,10 @@ log_error(tipo, mensaje, tb="")   # guarda en DB + envía mail si SMTP configura
 list_errores(limit=50) → list[dict]
 clear_errores()
 
+# Uso de calculadoras
+log_uso(username, calculadora, tipo_doc)   # silencioso ante errores de DB
+get_uso_mensual(meses=12) → dict           # ver estructura abajo
+
 # Auth
 login(username, password) → 'ok' | 'no_user' | 'bad_pass'
 logout()
@@ -250,6 +269,23 @@ render_login()
 render_cambio_password()  # pantalla de primer ingreso (mismo diseño split-screen)
 init_db()
 ```
+
+### `get_uso_mensual(meses=12)` → dict
+
+```python
+{
+  "por_mes_calc":     [{"mes": "2026-05", "calculadora": "ejecucion", "cantidad": 3}, ...],
+  "por_usuario":      [{"mes": "2026-05", "username": "gonzalez", "calculadora": ..., "tipo_doc": ..., "cantidad": 2}, ...],
+  "resumen_usuarios": [{"username": "gonzalez", "mes": 3, "total": 12}, ...],  # ordenado por total DESC
+  "total_mes":        int,   # total documentos en el mes actual
+  "total_hist":       int,   # total histórico
+  "top_usuario":      str,   # "gonzalez (12)"
+}
+```
+
+Constantes exportadas:
+- `_CALC_LABELS = {"ejecucion": "Ejecución", "ampliacion": "Ampliación", "cobro": "Hasta Cobro"}`
+- `_DOC_LABELS  = {"excel": "Excel", "pdf": "PDF", "docx": "DOCX"}`
 
 ### Importación automática de puentes (`importar_puentes_anio`)
 
@@ -502,7 +538,7 @@ for cada fila en df_planilla:
      con el monto total en tipografía grande, y leyenda "Calculado hasta DD/MM/YYYY —
      efectivo pago conforme recibo que consta en autos"
    - 3 métricas bajo el box: Capital total · Intereses Tramo A · Intereses Tramo B
-10. **Exportar**: 2 columnas (Excel 2 hojas | PDF)
+10. **Exportar**: 3 columnas (Excel 2 hojas | PDF | Escrito DOCX)
 
 ### Resultado final — box verde (HTML inline)
 ```python
@@ -564,7 +600,8 @@ Session state: `amp_filas`, `amp_resultado`, `amp_fecha_pago`
 5. Datos: `capital` + `fecha_aprobacion` + `fecha_cobro`
 6. Calcular → `calcular_interes_simple()`
 7. Resultado: 3 métricas + expander (T₀=aprobacion-1día, T₀ fecha, Tₘ, coeficiente)
-8. Exportar: Excel detallado | PDF (fila única, `periodo = "Aprobado DD/MM/YYYY"`)
+8. Exportar: 3 columnas (Excel detallado | PDF fila única | Escrito DOCX)
+   - PDF fila única: `periodo = "Aprobado DD/MM/YYYY"`
 
 Session state: `resultado_cobro`
 
@@ -598,11 +635,59 @@ exportar_pdf(df, titulo=...) → bytes
 # Ejecución de Sentencia
 exportar_excel_ejecucion(resultado) → bytes   # 2 hojas: Tramo A / Tramo B
 exportar_pdf_ejecucion(resultado, titulo=...) → bytes
+
+# Escritos judiciales DOCX
+generar_docx_cobro(resultado, letrado, caratula, expediente) → bytes
+generar_docx_ejecucion(resultado, letrado, caratula, expediente) → bytes
+
+# Helper (usado internamente por ambas funciones DOCX)
+_numero_a_palabras(monto: float) → str   # 250000.50 → "DOSCIENTOS CINCUENTA MIL CON 50/100"
 ```
 
 PDF general: reportlab, A4 landscape. Header azul `#1e3a5f`, filas alternadas, total en amarillo `#fef3cd`.
 PDF Ejecución Tramo A: header verde `#2d6a4f`, dato en verde claro `#d8f3dc`.
 PDF Resultado final: header verde oscuro `#052e16`, fila dato en verde muy claro `#f0fdf4`.
+
+### DOCX — `generar_docx_cobro` (Intereses hasta el Cobro)
+
+Basado en `PUNTO 3.pdf`. Firma: `(resultado: dict, letrado: dict, caratula: str, expediente: str) → bytes`.
+
+Campos dinámicos del `resultado`:
+```python
+{"capital", "interes", "total", "fecha_desde", "fecha_hasta", "fecha_t0",
+ "indice_inicial", "indice_final", "coeficiente"}
+```
+
+Zonas editadas (marcadas en rojo en el PDF template):
+1. `nombre_completo` + `cuil` del letrado (negrita)
+2. `caratula - EXPTE. expediente` (negrita)
+3. Monto en palabras **UPPERCASE** + número AR en negrita: `PESOS DOSCIENTOS MIL ($ 200.000,00)`
+4. Tabla de cálculo única: Capital | Int. desde | Int. hasta | Índice T₀ | Índice Tₘ | Coeficiente | Interés ($)
+5. Boilerplate completo: secciones I–IV, Petitum, SERÁ JUSTICIA
+
+Formato DOCX: Arial 12pt, A4, márgenes 3cm izq / 2cm der / 2.5cm sup-inf. Tabla con `"Table Grid"`.
+
+### DOCX — `generar_docx_ejecucion` (Ejecución de Sentencia)
+
+Basado en `PUNTO 1.pdf`. Misma firma que `generar_docx_cobro`.
+
+Campos dinámicos del `resultado` (estructura de `calcular_ejecucion()`):
+```python
+{"dia_120", "dia_121", "filas_a", "capital_a_total",
+ "resultado_a", "resultado_b", "fecha_hasta"}
+```
+
+Zonas editadas (marcadas en rojo en el PDF template):
+1. `nombre_completo` + `cuil` del letrado (negrita)
+2. `caratula - EXPTE. expediente` (negrita)
+3. `dia_120` en negrita en sección II.A: "...hasta el **03/07/2024**."
+4. `dia_121` y `fecha_hasta` en negrita en sección II.B
+5. Monto en palabras **lowercase** + número AR en negrita en sección IV:
+   `pesos quinientos mil... ($ 500.000,00)`
+6. Planilla Tramo A (tabla de períodos + tabla de cálculo único) + Planilla Tramo B + resultado final
+7. Boilerplate completo: secciones I–V, Petitorio (1. y 2.), SERÁ JUSTICIA
+
+Diferencia clave vs Cobro: el monto va en **minúsculas** en el texto (per el template original).
 
 ---
 
@@ -624,9 +709,19 @@ Com. 14290 · Uso de la Justicia
 
 Guard doble: router no registra la página para clientes + `if usuario["rol"] != "admin": st.stop()`.
 
-### Secciones
-1. **Letrados**: listar activos+inactivos, toggle activar/desactivar, form agregar nuevo
-2. **Log de errores**: lista de errores capturados (timestamp, tipo, mail enviado/no), expander con traceback, botón "Limpiar". Si no hay errores muestra `✅ Sin errores registrados`.
+### Secciones (en orden visual)
+
+1. **📊 Uso de calculadoras**
+   - 3 métricas globales: Documentos este mes / Total histórico / Más activo
+   - Tarjeta por usuario: "este mes: X · total: Y" (una por cada username en `uso_documentos`)
+   - Bar chart mensual agrupado por calculadora (últimos 12 meses, `st.bar_chart`)
+   - Tabla detalle siempre visible: Mes · Usuario · Calculadora · Tipo · Docs
+
+2. **Letrados**: listar activos+inactivos, toggle activar/desactivar, form agregar nuevo
+
+3. **Log de errores**: lista de errores capturados (timestamp, tipo, mail enviado/no), expander con traceback, botón "Limpiar". Si no hay errores muestra `✅ Sin errores registrados`.
+
+4. **🔑 Cambiar contraseña**: form con 3 campos (actual + nueva + confirmar). Verifica la contraseña actual antes de guardar. Solo cambia la del admin logueado (`usuario["username"]`).
 
 ---
 
@@ -721,9 +816,26 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 - `init_db()` verifica el hash: si coincide con la contraseña por defecto → fuerza `primer_login = 1`
 - Una vez que cambian la contraseña, el hash no coincide más → no se vuelve a tocar
 
-### 🔜 Sprint 4 (pendiente ejemplos del usuario)
-- **DOCX escritos judiciales**: uno por calculadora (Ejecución, Ampliación, Intereses hasta Cobro)
-  - **NO se puede iniciar sin los documentos de ejemplo** — el usuario los enviará
+### ✅ Sprint 4 — rama `dev` (checkpoint `65461f3`)
+
+**`7f4a619` → `49aba84` → `65461f3` — Escritos judiciales DOCX:**
+- `exportar.py`: `_numero_a_palabras()` para montos en palabras castellano (hasta millones + centavos)
+- `exportar.py`: helpers DOCX internos (`_docx_shade_cell`, `_docx_set_col_widths`, `_docx_add_table_header`, `_docx_add_data_row`)
+- `exportar.py`: `generar_docx_cobro()` — escrito "Intereses hasta el Cobro" (basado en PUNTO 3.pdf)
+- `exportar.py`: `generar_docx_ejecucion()` — escrito "Ejecución de Sentencia" (basado en PUNTO 1.pdf)
+- `pages/intereses_cobro.py`: 3ra columna "⬇ Descargar escrito DOCX"
+- `pages/ejecucion.py`: 3ra columna "⬇ Descargar escrito DOCX"
+
+**`387e4cd` + `fa5516e` — Panel de uso de calculadoras:**
+- `auth.py`: tabla `uso_documentos` en DB + `log_uso()` + `get_uso_mensual()` + constantes `_CALC_LABELS`/`_DOC_LABELS`
+- `pages/admin.py`: sección "Uso de calculadoras" con métricas globales, tarjetas por usuario, bar chart y tabla
+- Las 3 calculadoras capturan el `True` del `st.download_button` para llamar `log_uso()`
+
+**`d66b999` — Cambio de contraseña del admin:**
+- `pages/admin.py`: sección "🔑 Cambiar contraseña" al final del panel (verifica pass actual antes de guardar)
+
+### 🔜 Pendiente
+- **DOCX Ampliación de Ejecución**: no hay ejemplo del usuario todavía
 - Merge `dev` → `main` cuando UAT esté completo
 
 ---
@@ -792,11 +904,31 @@ La columna `bloqueado` sigue en la DB pero es inerte. No reimplementar ese siste
 Variables de entorno en Railway: `SMTP_USER` + `SMTP_PASSWORD` (Gmail App Password).
 Sin ellas el log a DB funciona igual, solo no envía mail. No hardcodear credenciales.
 
+### 17. DOCX — monto en palabras: mayúsculas vs minúsculas
+- **`generar_docx_cobro`**: monto en **MAYÚSCULAS** (`_numero_a_palabras(monto)`)
+- **`generar_docx_ejecucion`**: monto en **minúsculas** (`_numero_a_palabras(monto).lower()`)
+  Diferencia dictada por los templates originales (PUNTO 3 vs PUNTO 1).
+
+### 18. `log_uso` — no lanza excepciones
+`log_uso()` tiene `try/except` que suprime todo error silenciosamente.
+Esto es intencional: un fallo de tracking nunca debe romper la descarga del usuario.
+
+### 19. Tablas DOCX — estilo `"Table Grid"` de Word
+Las tablas del DOCX usan `tbl.style = "Table Grid"` para que las líneas aparezcan visibles
+al abrir en Word/LibreOffice. Sin ese estilo la tabla se ve sin bordes.
+Los colores de fondo se aplican con `_docx_shade_cell(cell, "RRGGBB")` (sin #).
+
 ---
 
 ## 21. Git log (rama dev)
 
 ```
+65461f3  Sprint 4: escrito DOCX Ejecucion de Sentencia (documento correcto PUNTO 1.pdf)
+49aba84  Mover escrito DOCX de Ejecucion a Intereses hasta el Cobro
+d66b999  Admin: seccion para cambiar contrasena propia con verificacion de pass actual
+fa5516e  Panel de uso: metricas por usuario + tabla siempre visible
+387e4cd  Panel de uso: tracking de documentos generados por calculadora y usuario
+7f4a619  Sprint 4: generar escrito judicial DOCX para Ejecucion de Sentencia  ← (asignación inicial incorrecta, reemplazada por 49aba84 + 65461f3)
 f0b2270  fix: forzar primer_login=1 para usuarios con contrasena por defecto
 c7aaf1c  refactor: eliminar sistema de bloqueo y suscripcion
 90b42c8  feat: cambio de contrasena obligatorio en primer ingreso
@@ -816,3 +948,21 @@ a3398c3  fix: fecha efectiva de pago va despues de la tabla en ampliacion
 9b8c30f  feat: Sprint 2 — ampliacion.py + tabla expedientes + admin letrados
 81bd123  feat: Sprint 1 — home 3 cards + intereses_cobro + tabla abogados
 ```
+
+### ↩️ Cómo volver al checkpoint `65461f3`
+
+Si algo se rompe después de este punto:
+```bash
+git checkout dev
+git log --oneline          # verificar que 65461f3 esté en el log
+git reset --hard 65461f3   # ⚠️ destructivo — descarta commits posteriores locales
+git push --force origin dev # solo si ya se pushearon commits malos
+```
+
+Estado exacto del checkpoint:
+- `exportar.py`: contiene `generar_docx_cobro` + `generar_docx_ejecucion` + `_numero_a_palabras` + 4 helpers DOCX
+- `auth.py`: tabla `uso_documentos` + `log_uso` + `get_uso_mensual` + `change_password`
+- `pages/admin.py`: 4 secciones (uso + letrados + errores + cambio pass)
+- `pages/ejecucion.py`: 3 columnas exportar (Excel | PDF | DOCX)
+- `pages/intereses_cobro.py`: 3 columnas exportar (Excel | PDF | DOCX)
+- `pages/ampliacion.py`: 2 columnas exportar (Excel | PDF) — DOCX pendiente
