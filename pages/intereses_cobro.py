@@ -2,7 +2,6 @@
 intereses_cobro.py — Intereses Aprobados hasta Cobro
 Capital único · Desde el día siguiente a la aprobación hasta el efectivo cobro.
 """
-import io
 from datetime import date
 
 import pandas as pd
@@ -193,27 +192,6 @@ if st.session_state.get("resultado_cobro"):
 
     caratula = exp.get("Carátula", exp.get("Caratula", ""))
     expediente_num = exp.get("Expediente", "")
-    nombre_base = expediente_num.replace("/", "-") or "liquidacion"
-
-    # Excel — formato detallado con letrado, carátula y todos los campos
-    df_exp = pd.DataFrame([{
-        "Letrado":               abogado["nombre_completo"],
-        "CUIL":                  abogado["cuil"],
-        "Carátula":              caratula,
-        "Expediente":            expediente_num,
-        "Capital aprobado ($)":  res["capital"],
-        "Intereses desde":       res["fecha_desde"].strftime("%d/%m/%Y"),
-        "Intereses hasta":       res["fecha_hasta"].strftime("%d/%m/%Y"),
-        "Índice T₀":             res["indice_inicial"],
-        "Índice Tₘ":             res["indice_final"],
-        "Coeficiente":           res["coeficiente"],
-        "Interés moratorio ($)": res["interes"],
-        "Total ($)":             res["total"],
-    }])
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_exp.to_excel(writer, index=False, sheet_name="Intereses hasta Cobro")
-    xlsx_bytes = output.getvalue()
 
     # PDF — fila única compatible con exportar_pdf()
     df_pdf = pd.DataFrame([{
@@ -234,22 +212,15 @@ if st.session_state.get("resultado_cobro"):
 
     _uname_cob  = (get_session_user() or {}).get("username", "desconocido")
     _caratula_c = exp.get("Carátula", exp.get("Caratula", ""))
+    _apellido   = _caratula_c.split(",")[0].strip() if _caratula_c else "liquidacion"
+    _nombre_doc = f"INT M - {_apellido}"
 
-    col_xl, col_pdf, col_docx = st.columns(3)
-    with col_xl:
-        if st.download_button(
-            "⬇ Descargar Excel",
-            data=xlsx_bytes,
-            file_name=f"intereses_cobro_{nombre_base}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True,
-        ):
-            log_uso(_uname_cob, "cobro", "excel")
+    col_pdf, col_docx = st.columns(2)
     with col_pdf:
         if st.download_button(
             "⬇ Descargar PDF",
             data=pdf_bytes,
-            file_name=f"intereses_cobro_{nombre_base}.pdf",
+            file_name=f"{_nombre_doc}.pdf",
             mime="application/pdf",
             use_container_width=True,
         ):
@@ -257,9 +228,9 @@ if st.session_state.get("resultado_cobro"):
     with col_docx:
         docx_bytes = generar_docx_cobro(res, abogado, _caratula_c, expediente_num)
         if st.download_button(
-            "⬇ Descargar escrito DOCX",
+            "⬇ Descargar Word",
             data=docx_bytes,
-            file_name=f"escrito_cobro_{nombre_base}.docx",
+            file_name=f"{_nombre_doc}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
         ):

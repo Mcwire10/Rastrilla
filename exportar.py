@@ -7,7 +7,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from docx import Document
 from docx.shared import Pt, Cm as DCm, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 
@@ -526,7 +526,6 @@ def generar_docx_cobro(
     interes      = resultado["interes"]
     fecha_desde  = resultado["fecha_desde"]
     fecha_hasta  = resultado["fecha_hasta"]
-    fecha_t0     = resultado["fecha_t0"]
     ind_ini      = resultado["indice_inicial"]
     ind_fin      = resultado["indice_final"]
     coef         = resultado["coeficiente"]
@@ -547,6 +546,10 @@ def generar_docx_cobro(
     doc.styles["Normal"].font.name = "Arial"
     doc.styles["Normal"].font.size = Pt(12)
 
+    def _ls(p) -> None:
+        """Aplica interlineado 1.5 al párrafo."""
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+
     def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
                    indent: float = 1.25, space_after: float = 6) -> None:
         """Párrafo con runs de distintos formatos. parts: [(text, bold, underline)]."""
@@ -554,6 +557,7 @@ def generar_docx_cobro(
         p.alignment = align
         p.paragraph_format.first_line_indent = DCm(indent)
         p.paragraph_format.space_after = Pt(space_after)
+        _ls(p)
         for text, bold, underline in parts:
             r = p.add_run(text)
             r.bold = bold
@@ -574,6 +578,7 @@ def generar_docx_cobro(
     p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_tit.paragraph_format.first_line_indent = DCm(0)
     p_tit.paragraph_format.space_after = Pt(8)
+    _ls(p_tit)
     r = p_tit.add_run("PRACTICA LIQUIDACION – INTERESES")
     r.bold = True
     r.underline = True
@@ -584,20 +589,23 @@ def generar_docx_cobro(
     p_juez.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p_juez.paragraph_format.first_line_indent = DCm(0)
     p_juez.paragraph_format.space_after = Pt(6)
+    _ls(p_juez)
     r2 = p_juez.add_run("SEÑOR JUEZ FEDERAL:")
     r2.bold = True
     r2.font.size = Pt(12)
 
-    # ── Párrafo letrado + carátula ───────────────────────────────────────────
+    # ── Párrafo letrado + carátula ────────────────────────────────────────────
+    # Carátula entre comillas dobles (no ángulos)
     p_intro = doc.add_paragraph()
     p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p_intro.paragraph_format.first_line_indent = DCm(1.25)
     p_intro.paragraph_format.space_after = Pt(10)
+    _ls(p_intro)
     for text, bold in [
         (nombre_letrado, True),
-        (f", CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: «", False),
+        (f', CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: "', False),
         (f"{caratula} - EXPTE. {expediente}", True),
-        ("», con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:", False),
+        ('", con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:', False),
     ]:
         r3 = p_intro.add_run(text)
         r3.bold = bold
@@ -636,11 +644,11 @@ def generar_docx_cobro(
     p_pl = doc.add_paragraph()
     p_pl.paragraph_format.first_line_indent = DCm(0)
     p_pl.paragraph_format.space_after = Pt(3)
+    _ls(p_pl)
     rpl = p_pl.add_run("PLANILLA DE LIQUIDACIÓN")
     rpl.bold = True
     rpl.font.size = Pt(9)
 
-    # Tabla de cálculo: 7 columnas, fila única de datos
     tbl = doc.add_table(rows=2, cols=7)
     tbl.style = "Table Grid"
     _docx_set_col_widths(tbl, [2.5, 2.3, 2.3, 2.0, 2.0, 2.4, 2.5])
@@ -689,9 +697,9 @@ def generar_docx_cobro(
     _par("b) Oportunamente, apruebe la misma en cuanto por derecho corresponda.", space_after=4)
     _par("c) Intime a la demandada al pago de las sumas resultantes.", space_after=10)
 
-    # ── Cierre ───────────────────────────────────────────────────────────────
-    _par("Proveer de conformidad,", indent=1.25, space_after=4)
-    _par("SERÁ JUSTICIA.", bold=True, indent=1.25, space_after=0)
+    # ── Cierre (centrado) ─────────────────────────────────────────────────────
+    _par("Proveer de conformidad,", indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
+    _par("SERÁ JUSTICIA.", bold=True, indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
 
     buf = io.BytesIO()
     doc.save(buf)
