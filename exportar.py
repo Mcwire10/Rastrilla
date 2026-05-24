@@ -744,12 +744,17 @@ def generar_docx_ejecucion(
     doc.styles["Normal"].font.name = "Arial"
     doc.styles["Normal"].font.size = Pt(12)
 
+    def _ls(p) -> None:
+        """Aplica interlineado 1.5 al párrafo."""
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+
     def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
                    indent: float = 1.25, space_after: float = 6) -> None:
         p = doc.add_paragraph()
         p.alignment = align
         p.paragraph_format.first_line_indent = DCm(indent)
         p.paragraph_format.space_after = Pt(space_after)
+        _ls(p)
         for text, bold, underline in parts:
             r = p.add_run(text)
             r.bold = bold
@@ -780,8 +785,10 @@ def generar_docx_ejecucion(
     p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_tit.paragraph_format.first_line_indent = DCm(0)
     p_tit.paragraph_format.space_after = Pt(8)
+    _ls(p_tit)
     r = p_tit.add_run("PRACTICA LIQUIDACION DE INTERESES MORATORIOS")
     r.bold = True
+    r.underline = True
     r.font.size = Pt(12)
 
     # ── SEÑOR JUEZ FEDERAL ───────────────────────────────────────────────────
@@ -789,6 +796,7 @@ def generar_docx_ejecucion(
     p_juez.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p_juez.paragraph_format.first_line_indent = DCm(0)
     p_juez.paragraph_format.space_after = Pt(6)
+    _ls(p_juez)
     rj = p_juez.add_run("SEÑOR JUEZ FEDERAL:")
     rj.bold = True
     rj.font.size = Pt(12)
@@ -798,11 +806,12 @@ def generar_docx_ejecucion(
     p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p_intro.paragraph_format.first_line_indent = DCm(1.25)
     p_intro.paragraph_format.space_after = Pt(10)
+    _ls(p_intro)
     for text, bold in [
         (nombre_letrado, True),
-        (f", CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: «", False),
+        (f', CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: "', False),
         (f"{caratula} - EXPTE. {expediente}", True),
-        ("», con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:", False),
+        ('", con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:', False),
     ]:
         ri = p_intro.add_run(text)
         ri.bold = bold
@@ -818,7 +827,7 @@ def generar_docx_ejecucion(
     )
 
     # ── II.- CUMPLIMIENTO ────────────────────────────────────────────────────
-    _section("II.-", "CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN «FALLO VEGA» y «RASTRILLA»")
+    _section("II.-", 'CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"')
     _par(
         "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
         "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
@@ -902,6 +911,7 @@ def generar_docx_ejecucion(
     p_la = doc.add_paragraph()
     p_la.paragraph_format.first_line_indent = DCm(0)
     p_la.paragraph_format.space_after = Pt(3)
+    _ls(p_la)
     ra2 = p_la.add_run("PLANILLA — TRAMO A")
     ra2.bold = True
     ra2.font.size = Pt(9)
@@ -946,6 +956,7 @@ def generar_docx_ejecucion(
             p_lb = doc.add_paragraph()
             p_lb.paragraph_format.first_line_indent = DCm(0)
             p_lb.paragraph_format.space_after = Pt(3)
+            _ls(p_lb)
             rb2 = p_lb.add_run("PLANILLA — TRAMO B")
             rb2.bold = True
             rb2.font.size = Pt(9)
@@ -1007,9 +1018,9 @@ def generar_docx_ejecucion(
         space_after=10,
     )
 
-    # ── Cierre ───────────────────────────────────────────────────────────────
-    _par("Proveer de conformidad,", indent=1.25, space_after=4)
-    _par("SERÁ JUSTICIA.", bold=True, indent=1.25, space_after=0)
+    # ── Cierre (centrado) ─────────────────────────────────────────────────────
+    _par("Proveer de conformidad,", indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
+    _par("SERÁ JUSTICIA.", bold=True, indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
 
     buf = io.BytesIO()
     doc.save(buf)

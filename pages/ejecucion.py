@@ -398,9 +398,11 @@ if st.session_state.get("eje_resultado") is not None:
     expediente_num = exp.get("Expediente", "")
     nombre_base    = expediente_num.replace("/", "-") or "liquidacion"
 
-    _uname_eje  = (get_session_user() or {}).get("username", "desconocido")
-    _caratula_e = exp.get("Carátula", exp.get("Caratula", ""))
+    _uname_eje    = (get_session_user() or {}).get("username", "desconocido")
+    _caratula_e   = exp.get("Carátula", exp.get("Caratula", ""))
     _expediente_e = exp.get("Expediente", "")
+    _apellido_e   = _caratula_e.split(",")[0].strip() if _caratula_e else "liquidacion"
+    _nombre_doc_e = f"INT1M - {_apellido_e}"
 
     col_xl, col_pdf, col_docx = st.columns(3)
     with col_xl:
@@ -418,7 +420,7 @@ if st.session_state.get("eje_resultado") is not None:
         if st.download_button(
             "⬇ Descargar PDF",
             data=pdf_bytes,
-            file_name=f"ejecucion_{nombre_base}.pdf",
+            file_name=f"{_nombre_doc_e}.pdf",
             mime="application/pdf",
             use_container_width=True,
         ):
@@ -426,9 +428,9 @@ if st.session_state.get("eje_resultado") is not None:
     with col_docx:
         docx_bytes = generar_docx_ejecucion(res, abogado, _caratula_e, _expediente_e)
         if st.download_button(
-            "⬇ Descargar escrito DOCX",
+            "⬇ Descargar Word",
             data=docx_bytes,
-            file_name=f"escrito_ejecucion_{nombre_base}.docx",
+            file_name=f"{_nombre_doc_e}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             use_container_width=True,
         ):
