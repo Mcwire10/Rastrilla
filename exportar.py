@@ -566,6 +566,7 @@ def generar_docx_cobro(
 
     # ── Datos ────────────────────────────────────────────────────────────────
     caratula     = _limpiar_caratula(caratula)
+    expediente   = limpiar_expediente(expediente)
     capital      = resultado["capital"]
     interes      = resultado["interes"]
     fecha_desde  = resultado["fecha_desde"]
@@ -762,6 +763,7 @@ def generar_pdf_cobro(
     from xml.sax.saxutils import escape as _xe
 
     caratula    = _limpiar_caratula(caratula)
+    expediente  = limpiar_expediente(expediente)
     capital     = resultado["capital"]
     interes     = resultado["interes"]
     fecha_desde = resultado["fecha_desde"]
@@ -937,6 +939,7 @@ def generar_docx_ejecucion(
 
     # ── Datos ────────────────────────────────────────────────────────────────
     caratula        = _limpiar_caratula(caratula)
+    expediente      = limpiar_expediente(expediente)
     dia_120         = resultado["dia_120"]
     dia_121         = resultado["dia_121"]
     filas_a         = resultado["filas_a"]
@@ -1259,6 +1262,7 @@ def generar_pdf_ejecucion_escrito(
     from xml.sax.saxutils import escape as _xe
 
     caratula        = _limpiar_caratula(caratula)
+    expediente      = limpiar_expediente(expediente)
     dia_120         = resultado["dia_120"]
     dia_121         = resultado["dia_121"]
     filas_a         = resultado["filas_a"]
