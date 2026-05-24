@@ -696,3 +696,313 @@ def generar_docx_cobro(
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+# ── Ejecución de Sentencia — DOCX (Escrito judicial) ──────────────────────────
+
+def generar_docx_ejecucion(
+    resultado: dict,
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial DOCX — Ejecución de Sentencia (PASO #1)."""
+
+    # ── Datos ────────────────────────────────────────────────────────────────
+    dia_120         = resultado["dia_120"]
+    dia_121         = resultado["dia_121"]
+    filas_a         = resultado["filas_a"]
+    capital_a_total = resultado["capital_a_total"]
+    res_a           = resultado["resultado_a"]
+    res_b           = resultado["resultado_b"]
+    fecha_hasta     = resultado["fecha_hasta"]
+
+    int_a_val   = float(res_a.get("interes", 0) or 0) if not res_a.get("error") else 0.0
+    int_b_val   = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
+    monto_total = int_a_val + int_b_val
+
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+
+    # ── Documento ────────────────────────────────────────────────────────────
+    doc = Document()
+    sec = doc.sections[0]
+    sec.page_width    = DCm(21.0)
+    sec.page_height   = DCm(29.7)
+    sec.left_margin   = DCm(3.0)
+    sec.right_margin  = DCm(2.0)
+    sec.top_margin    = DCm(2.5)
+    sec.bottom_margin = DCm(2.5)
+    doc.styles["Normal"].font.name = "Arial"
+    doc.styles["Normal"].font.size = Pt(12)
+
+    def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+                   indent: float = 1.25, space_after: float = 6) -> None:
+        p = doc.add_paragraph()
+        p.alignment = align
+        p.paragraph_format.first_line_indent = DCm(indent)
+        p.paragraph_format.space_after = Pt(space_after)
+        for text, bold, underline in parts:
+            r = p.add_run(text)
+            r.bold = bold
+            r.underline = underline
+            r.font.size = Pt(12)
+
+    def _par(text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+             indent: float = 1.25, space_after: float = 6) -> None:
+        _par_mixed([(text, bold, False)], align=align, indent=indent, space_after=space_after)
+
+    def _section(num: str, titulo: str, space_after: float = 4) -> None:
+        """Encabezado de sección: 'I.- OBJETO' en negrita."""
+        _par_mixed([(f"{num} {titulo}", True, False)],
+                   align=WD_ALIGN_PARAGRAPH.LEFT, indent=1.25, space_after=space_after)
+
+    def _subsection(letra: str, titulo: str) -> None:
+        """Subsección: 'A) Períodos anteriores...' en negrita."""
+        _par_mixed([(f"{letra} {titulo}", True, False)],
+                   align=WD_ALIGN_PARAGRAPH.LEFT, indent=1.25, space_after=4)
+
+    def _spacer(pt: float = 4) -> None:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(pt)
+        p.paragraph_format.space_before = Pt(0)
+
+    # ── TÍTULO ───────────────────────────────────────────────────────────────
+    p_tit = doc.add_paragraph()
+    p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_tit.paragraph_format.first_line_indent = DCm(0)
+    p_tit.paragraph_format.space_after = Pt(8)
+    r = p_tit.add_run("PRACTICA LIQUIDACION DE INTERESES MORATORIOS")
+    r.bold = True
+    r.font.size = Pt(12)
+
+    # ── SEÑOR JUEZ FEDERAL ───────────────────────────────────────────────────
+    p_juez = doc.add_paragraph()
+    p_juez.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_juez.paragraph_format.first_line_indent = DCm(0)
+    p_juez.paragraph_format.space_after = Pt(6)
+    rj = p_juez.add_run("SEÑOR JUEZ FEDERAL:")
+    rj.bold = True
+    rj.font.size = Pt(12)
+
+    # ── Párrafo letrado + carátula ───────────────────────────────────────────
+    p_intro = doc.add_paragraph()
+    p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_intro.paragraph_format.first_line_indent = DCm(1.25)
+    p_intro.paragraph_format.space_after = Pt(10)
+    for text, bold in [
+        (nombre_letrado, True),
+        (f", CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: «", False),
+        (f"{caratula} - EXPTE. {expediente}", True),
+        ("», con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:", False),
+    ]:
+        ri = p_intro.add_run(text)
+        ri.bold = bold
+        ri.font.size = Pt(12)
+
+    # ── I.- OBJETO ───────────────────────────────────────────────────────────
+    _section("I.-", "OBJETO")
+    _par(
+        "Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de "
+        "intereses moratorios, practicada conforme los lineamientos expresamente establecidos "
+        "por V.S. en fallo «Rastrilla» y «VEGA», solicitando oportunamente su aprobación.",
+        space_after=10,
+    )
+
+    # ── II.- CUMPLIMIENTO ────────────────────────────────────────────────────
+    _section("II.-", "CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN «FALLO VEGA» y «RASTRILLA»")
+    _par(
+        "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
+        "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
+        space_after=6,
+    )
+    _par("En tal sentido, se procedió a distinguir expresamente:", space_after=6)
+
+    # A) Períodos anteriores al día 120
+    _subsection("A)", "Períodos anteriores al vencimiento del plazo de 120 días")
+    _par_mixed([
+        ("Respecto de los períodos comprendidos con anterioridad al vencimiento del plazo legal "
+         "de ciento veinte (120) días hábiles para el cumplimiento de la sentencia, se determinó "
+         "el retroactivo correspondiente por las diferencias devengadas hasta el día 120, es decir "
+         "hasta el ", False, False),
+        (dia_120.strftime("%d/%m/%Y"), True, False),
+        (".", False, False),
+    ], space_after=6)
+    _par(
+        "Posteriormente, sobre el monto total resultante, se calcularon intereses moratorios "
+        "aplicando la tasa pasiva promedio del BCRA desde el día 121 —momento de constitución "
+        "automática en mora conforme art. 886 CCCN— y hasta la fecha de efectiva transferencia "
+        "del embargo.",
+        space_after=6,
+    )
+
+    # B) Períodos posteriores al día 120
+    _subsection("B)", "Períodos posteriores al vencimiento del plazo de 120 días")
+    _par_mixed([
+        ("Asimismo, para los períodos posteriores al vencimiento del referido plazo, se "
+         "individualizó cada diferencia mensual devengada y se calcularon los intereses moratorios "
+         "correspondientes desde que cada suma fue debida (", False, False),
+        (dia_121.strftime("%d/%m/%Y"), True, False),
+        (") y hasta la fecha de transferencia del embargo (", False, False),
+        (fecha_hasta.strftime("%d/%m/%Y"), True, False),
+        (").", False, False),
+    ], space_after=6)
+    _par(
+        "De este modo, la metodología aplicada recepta íntegramente los parámetros fijados "
+        "por V.S., respetando la diferenciación temporal expresamente establecida en la "
+        "resolución dictada.",
+        space_after=10,
+    )
+
+    # ── III.- PROCEDENCIA ────────────────────────────────────────────────────
+    _section("III.-", "PROCEDENCIA DE LOS INTERESES MORATORIOS")
+    _par(
+        "Cabe destacar que V.S. ya ha reconocido expresamente la procedencia de los intereses "
+        "moratorios reclamados, dejando establecido que la ANSES incurrió en mora automática "
+        "una vez vencido el plazo de ciento veinte (120) días hábiles previsto para el "
+        "cumplimiento de la sentencia.",
+        space_after=6,
+    )
+    _par("En efecto, la resolución dictada en autos sostuvo expresamente que:", space_after=4)
+    _par(
+        "«a partir del día 121 —momento en el que se produce el incumplimiento de la "
+        "sentencia—, la demandada ANSES se constituyó en mora en forma automática (conf. "
+        "art. 886 del C.C.C.N) y debe intereses moratorios (conf. art. 768 del C.C.C.N).»",
+        space_after=6,
+    )
+    _par(
+        "Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
+        "efectivo pago, extremo que ha sido debidamente respetado en la liquidación acompañada.",
+        space_after=10,
+    )
+
+    # ── IV.- PLANILLA ────────────────────────────────────────────────────────
+    _section("IV.-", "PLANILLA – ACOMPAÑA")
+
+    monto_palabras = _numero_a_palabras(monto_total).lower()
+    monto_numero   = _fmt(monto_total)
+    _par_mixed([
+        ("Que se acompaña planilla detallada de cálculo de intereses moratorios confeccionada "
+         "conforme las pautas indicadas por V.S., discriminando períodos, capitales, fechas de "
+         "mora, tasa aplicada hasta el momento de su efectivo pago. En consecuencia, resulta a "
+         "favor de la actora monto de ", False, False),
+        (f"pesos {monto_palabras} ($ {monto_numero})", True, False),
+        (".", False, False),
+    ], space_after=10)
+
+    # — Tramo A —
+    p_la = doc.add_paragraph()
+    p_la.paragraph_format.first_line_indent = DCm(0)
+    p_la.paragraph_format.space_after = Pt(3)
+    ra2 = p_la.add_run("PLANILLA — TRAMO A")
+    ra2.bold = True
+    ra2.font.size = Pt(9)
+
+    n_rows_a = 1 + len(filas_a) + 1
+    tbl_a = doc.add_table(rows=n_rows_a, cols=2)
+    tbl_a.style = "Table Grid"
+    _docx_set_col_widths(tbl_a, [5.5, 10.5])
+    _docx_add_table_header(tbl_a, ["Período", "Capital proporcional ($)"])
+    for i, fila in enumerate(filas_a, start=1):
+        _docx_add_data_row(tbl_a, i, [fila["periodo"], f"$ {_fmt(fila['capital'])}"])
+    _docx_add_data_row(
+        tbl_a, n_rows_a - 1,
+        ["TOTAL TRAMO A", f"$ {_fmt(capital_a_total)}"],
+        bold=True, fill="FEF3CD",
+    )
+    _spacer(4)
+
+    if not res_a.get("error"):
+        tbl_calc = doc.add_table(rows=2, cols=6)
+        tbl_calc.style = "Table Grid"
+        _docx_set_col_widths(tbl_calc, [3.0, 2.5, 2.5, 2.5, 2.5, 3.0])
+        _docx_add_table_header(
+            tbl_calc,
+            ["Capital ($)", "Int. desde", "Int. hasta", "Índice T₀", "Índice Tₘ", "Interés moratorio ($)"],
+            fill="2D6A4F",
+        )
+        _docx_add_data_row(tbl_calc, 1, [
+            f"$ {_fmt(capital_a_total)}",
+            dia_121.strftime("%d/%m/%Y"),
+            fecha_hasta.strftime("%d/%m/%Y"),
+            f"{res_a['indice_inicial']:,.4f}",
+            f"{res_a['indice_final']:,.4f}",
+            f"$ {_fmt(res_a['interes'])}",
+        ], bold=True, fill="D8F3DC")
+        _spacer(6)
+
+    # — Tramo B —
+    if not res_b.empty:
+        df_b_ok = res_b[res_b["error"].isna()].copy()
+        if not df_b_ok.empty:
+            p_lb = doc.add_paragraph()
+            p_lb.paragraph_format.first_line_indent = DCm(0)
+            p_lb.paragraph_format.space_after = Pt(3)
+            rb2 = p_lb.add_run("PLANILLA — TRAMO B")
+            rb2.bold = True
+            rb2.font.size = Pt(9)
+
+            n_rows_b = 1 + len(df_b_ok) + 1
+            tbl_b = doc.add_table(rows=n_rows_b, cols=6)
+            tbl_b.style = "Table Grid"
+            _docx_set_col_widths(tbl_b, [2.2, 2.8, 2.5, 2.5, 3.0, 3.0])
+            _docx_add_table_header(
+                tbl_b,
+                ["Período", "Capital ($)", "Int. desde", "Fecha pago", "Interés ($)", "Total ($)"],
+            )
+            for i, (_, row) in enumerate(df_b_ok.iterrows(), start=1):
+                _docx_add_data_row(tbl_b, i, [
+                    row["periodo"],
+                    f"$ {_fmt(row['capital'])}",
+                    row["fecha_desde"].strftime("%d/%m/%Y"),
+                    row["fecha_pago"].strftime("%d/%m/%Y"),
+                    f"$ {_fmt(row['interes'])}",
+                    f"$ {_fmt(row['total'])}",
+                ])
+            t_int_b = df_b_ok["interes"].sum()
+            t_tot_b = df_b_ok["total"].sum()
+            _docx_add_data_row(
+                tbl_b, n_rows_b - 1,
+                ["TOTAL TRAMO B", "", "", "", f"$ {_fmt(t_int_b)}", f"$ {_fmt(t_tot_b)}"],
+                bold=True, fill="FEF3CD",
+            )
+            _spacer(6)
+
+    # Resultado final
+    tbl_res = doc.add_table(rows=2, cols=2)
+    tbl_res.style = "Table Grid"
+    _docx_set_col_widths(tbl_res, [12.0, 4.0])
+    _docx_add_table_header(
+        tbl_res,
+        ["RESULTADO FINAL — Intereses moratorios Tramo A + Tramo B", f"$ {_fmt(monto_total)}"],
+        fill="052E16",
+    )
+    _docx_add_data_row(
+        tbl_res, 1,
+        ["Calculado hasta — Efectivo pago conforme recibo que consta en autos",
+         fecha_hasta.strftime("%d/%m/%Y")],
+        bold=True, fill="F0FDF4",
+    )
+    _spacer(10)
+
+    # ── V.- PETITORIO ────────────────────────────────────────────────────────
+    _par_mixed([
+        ("V.-", True, False),
+        (" PETITORIO: Por todo lo expuesto, a V.S. solicito:", False, False),
+    ], align=WD_ALIGN_PARAGRAPH.LEFT, indent=1.25, space_after=4)
+    _par(
+        "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
+        space_after=4,
+    )
+    _par(
+        "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
+        space_after=10,
+    )
+
+    # ── Cierre ───────────────────────────────────────────────────────────────
+    _par("Proveer de conformidad,", indent=1.25, space_after=4)
+    _par("SERÁ JUSTICIA.", bold=True, indent=1.25, space_after=0)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
