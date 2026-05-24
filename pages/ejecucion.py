@@ -12,7 +12,7 @@ from auth import list_abogados, list_feriados_extra, log_calculo, importar_puent
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_ejecucion, primer_dia_mes_siguiente
 from calendario import dia_habil_n
-from exportar import exportar_excel_ejecucion, generar_pdf_ejecucion_escrito, generar_docx_ejecucion
+from exportar import exportar_excel_ejecucion, generar_pdf_ejecucion_escrito, generar_docx_ejecucion, limpiar_expediente
 from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ if texto_exp.strip():
 if exp:
     c_e1, c_e2 = st.columns(2)
     with c_e1:
-        st.markdown(f"**Expediente:** {exp.get('Expediente', '—')}")
+        st.markdown(f"**Expediente:** {limpiar_expediente(exp.get('Expediente', '')) or '—'}")
         st.markdown(f"**Carátula:** {exp.get('Carátula', exp.get('Caratula', '—'))}")
     with c_e2:
         st.markdown(f"**Jurisdicción:** {exp.get('Jurisdicción', exp.get('Jurisdiccion', '—'))}")
@@ -267,7 +267,7 @@ if st.button("▶ Calcular intereses", type="primary", use_container_width=True)
             log_calculo(
                 tipo="ejecucion",
                 letrado_id=abogado["id"],
-                expediente=exp.get("Expediente", ""),
+                expediente=limpiar_expediente(exp.get("Expediente", "")),
                 caratula=exp.get("Carátula", exp.get("Caratula", "")),
                 capital_total=float(resultado["capital_a_total"]) + cap_b,
                 interes_total=int_a + int_b,
@@ -395,12 +395,12 @@ if st.session_state.get("eje_resultado") is not None:
     # ── Exportar ──────────────────────────────────────────────────────────────
     st.subheader("7. Exportar")
 
-    expediente_num = exp.get("Expediente", "")
+    expediente_num = limpiar_expediente(exp.get("Expediente", ""))
     nombre_base    = expediente_num.replace("/", "-") or "liquidacion"
 
     _uname_eje    = (get_session_user() or {}).get("username", "desconocido")
     _caratula_e   = exp.get("Carátula", exp.get("Caratula", ""))
-    _expediente_e = exp.get("Expediente", "")
+    _expediente_e = expediente_num
     _apellido_e   = _caratula_e.split(",")[0].strip() if _caratula_e else "liquidacion"
     _nombre_doc_e = f"INT1M - {_apellido_e}"
 

@@ -9,7 +9,7 @@ import streamlit as st
 from auth import list_abogados, importar_puentes_anio, log_uso, get_session_user
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_interes_simple
-from exportar import generar_pdf_cobro, generar_docx_cobro
+from exportar import generar_pdf_cobro, generar_docx_cobro, limpiar_expediente
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
@@ -102,7 +102,7 @@ if texto_exp.strip():
 if exp:
     c_e1, c_e2 = st.columns(2)
     with c_e1:
-        st.markdown(f"**Expediente:** {exp.get('Expediente', '—')}")
+        st.markdown(f"**Expediente:** {limpiar_expediente(exp.get('Expediente', '')) or '—'}")
         st.markdown(f"**Carátula:** {exp.get('Carátula', exp.get('Caratula', '—'))}")
     with c_e2:
         st.markdown(f"**Jurisdicción:** {exp.get('Jurisdicción', exp.get('Jurisdiccion', '—'))}")
@@ -190,7 +190,7 @@ if st.session_state.get("resultado_cobro"):
     st.subheader("5. Exportar")
 
     caratula = exp.get("Carátula", exp.get("Caratula", ""))
-    expediente_num = exp.get("Expediente", "")
+    expediente_num = limpiar_expediente(exp.get("Expediente", ""))
 
     _uname_cob  = (get_session_user() or {}).get("username", "desconocido")
     _caratula_c = exp.get("Carátula", exp.get("Caratula", ""))

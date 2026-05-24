@@ -496,6 +496,17 @@ def _limpiar_caratula(caratula: str) -> str:
     return re.sub(r"\s*\(agregar/quitar[^)]*\)", "", caratula, flags=re.IGNORECASE).strip()
 
 
+def limpiar_expediente(valor: str) -> str:
+    """Extrae solo el número de expediente en formato SIGLA NUMERO/AÑO.
+    Ej: 'FMZ 041824/2019 (agregar/quitar...)' → 'FMZ 041824/2019'
+         '041824/2019'                         → '041824/2019'
+    """
+    m = re.search(r"(?:[A-Za-z]{2,5}\s+)?\d+/\d{4}", valor)
+    if m:
+        return m.group(0).strip()
+    return valor.strip()
+
+
 def _docx_shade_cell(cell, fill: str) -> None:
     """Aplica color de fondo a una celda DOCX (fill sin #)."""
     tcPr = cell._tc.get_or_add_tcPr()

@@ -10,7 +10,7 @@ import streamlit as st
 from auth import list_abogados, log_calculo, importar_puentes_anio, log_uso, get_session_user
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_intereses, primer_dia_mes_siguiente
-from exportar import exportar_excel, exportar_pdf
+from exportar import exportar_excel, exportar_pdf, limpiar_expediente
 from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ if texto_exp.strip():
 if exp:
     c_e1, c_e2 = st.columns(2)
     with c_e1:
-        st.markdown(f"**Expediente:** {exp.get('Expediente', '—')}")
+        st.markdown(f"**Expediente:** {limpiar_expediente(exp.get('Expediente', '')) or '—'}")
         st.markdown(f"**Carátula:** {exp.get('Carátula', exp.get('Caratula', '—'))}")
     with c_e2:
         st.markdown(f"**Jurisdicción:** {exp.get('Jurisdicción', exp.get('Jurisdiccion', '—'))}")
@@ -218,7 +218,7 @@ if st.button("▶ Calcular intereses", type="primary", use_container_width=True)
                 log_calculo(
                     tipo="ampliacion",
                     letrado_id=abogado["id"],
-                    expediente=exp.get("Expediente", ""),
+                    expediente=limpiar_expediente(exp.get("Expediente", "")),
                     caratula=exp.get("Carátula", exp.get("Caratula", "")),
                     capital_total=float(df_ok_log["capital"].sum()),
                     interes_total=float(df_ok_log["interes"].sum()),
@@ -268,7 +268,7 @@ if st.session_state.get("amp_resultado") is not None:
         # ── Exportar ──────────────────────────────────────────────────────────
         st.subheader("5. Exportar")
 
-        expediente_num = exp.get("Expediente", "")
+        expediente_num = limpiar_expediente(exp.get("Expediente", ""))
         nombre_base = expediente_num.replace("/", "-") or "liquidacion"
 
         _uname_amp = (get_session_user() or {}).get("username", "desconocido")
