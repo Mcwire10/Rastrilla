@@ -4,13 +4,12 @@ Capital único · Desde el día siguiente a la aprobación hasta el efectivo cob
 """
 from datetime import date
 
-import pandas as pd
 import streamlit as st
 
 from auth import list_abogados, importar_puentes_anio, log_uso, get_session_user
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_interes_simple
-from exportar import exportar_pdf, generar_docx_cobro
+from exportar import generar_pdf_cobro, generar_docx_cobro
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
@@ -193,26 +192,11 @@ if st.session_state.get("resultado_cobro"):
     caratula = exp.get("Carátula", exp.get("Caratula", ""))
     expediente_num = exp.get("Expediente", "")
 
-    # PDF — fila única compatible con exportar_pdf()
-    df_pdf = pd.DataFrame([{
-        "periodo":        f"Aprobado {res['fecha_t0'].strftime('%d/%m/%Y')}",
-        "fecha_desde":    pd.Timestamp(res["fecha_desde"]),
-        "fecha_pago":     pd.Timestamp(res["fecha_hasta"]),
-        "capital":        res["capital"],
-        "indice_inicial": res["indice_inicial"],
-        "indice_final":   res["indice_final"],
-        "coeficiente":    res["coeficiente"],
-        "interes":        res["interes"],
-        "total":          res["total"],
-    }])
-    pdf_bytes = exportar_pdf(
-        df_pdf,
-        titulo="INTERESES APROBADOS HASTA COBRO — DOCTRINA RASTRILLA · VEGA",
-    )
-
     _uname_cob  = (get_session_user() or {}).get("username", "desconocido")
     _caratula_c = exp.get("Carátula", exp.get("Caratula", ""))
     _apellido   = _caratula_c.split(",")[0].strip() if _caratula_c else "liquidacion"
+
+    pdf_bytes  = generar_pdf_cobro(res, abogado, _caratula_c, expediente_num)
     _nombre_doc = f"INT M - {_apellido}"
 
     col_pdf, col_docx = st.columns(2)

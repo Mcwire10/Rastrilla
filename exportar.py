@@ -1,8 +1,10 @@
 import io
+import os
+import re
 import pandas as pd
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from docx import Document
@@ -10,6 +12,31 @@ from docx.shared import Pt, Cm as DCm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+
+# ── Registro de fuentes Calibri para PDF (opcional, fallback a Helvetica) ─────
+_PDF_FONT      = "Helvetica"
+_PDF_FONT_BOLD = "Helvetica-Bold"
+try:
+    from reportlab.pdfbase import pdfmetrics as _pdfm
+    from reportlab.pdfbase.ttfonts import TTFont as _TTFont
+    _cal_r = next((p for p in [
+        r"C:\Windows\Fonts\calibri.ttf",
+        "/usr/share/fonts/truetype/msttcorefonts/Calibri.ttf",
+        "/usr/share/fonts/calibri/Calibri.ttf",
+    ] if os.path.exists(p)), None)
+    _cal_b = next((p for p in [
+        r"C:\Windows\Fonts\calibrib.ttf",
+        "/usr/share/fonts/truetype/msttcorefonts/Calibri_Bold.ttf",
+        "/usr/share/fonts/calibri/Calibrib.ttf",
+    ] if os.path.exists(p)), None)
+    if _cal_r:
+        _pdfm.registerFont(_TTFont("Calibri", _cal_r))
+        _PDF_FONT = "Calibri"
+    if _cal_b:
+        _pdfm.registerFont(_TTFont("Calibri-Bold", _cal_b))
+        _PDF_FONT_BOLD = "Calibri-Bold"
+except Exception:
+    pass
 
 
 def _fmt(n: float) -> str:
@@ -464,6 +491,11 @@ def _numero_a_palabras(monto: float) -> str:
     return palabras
 
 
+def _limpiar_caratula(caratula: str) -> str:
+    """Elimina '(agregar/quitar...)' y texto similar generado por el sistema judicial."""
+    return re.sub(r"\s*\(agregar/quitar[^)]*\)", "", caratula, flags=re.IGNORECASE).strip()
+
+
 def _docx_shade_cell(cell, fill: str) -> None:
     """Aplica color de fondo a una celda DOCX (fill sin #)."""
     tcPr = cell._tc.get_or_add_tcPr()
@@ -522,6 +554,7 @@ def generar_docx_cobro(
     """Genera escrito judicial DOCX — Intereses hasta el Cobro."""
 
     # ── Datos ────────────────────────────────────────────────────────────────
+    caratula     = _limpiar_caratula(caratula)
     capital      = resultado["capital"]
     interes      = resultado["interes"]
     fecha_desde  = resultado["fecha_desde"]
@@ -543,7 +576,7 @@ def generar_docx_cobro(
     sec.right_margin  = DCm(2.0)
     sec.top_margin    = DCm(2.5)
     sec.bottom_margin = DCm(2.5)
-    doc.styles["Normal"].font.name = "Arial"
+    doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(12)
 
     def _ls(p) -> None:
@@ -698,11 +731,186 @@ def generar_docx_cobro(
     _par("c) Intime a la demandada al pago de las sumas resultantes.", space_after=10)
 
     # ── Cierre (centrado) ─────────────────────────────────────────────────────
-    _par("Proveer de conformidad,", indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
+    _par("Proveer de conformidad,", bold=True, indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
     _par("SERÁ JUSTICIA.", bold=True, indent=0, align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
 
     buf = io.BytesIO()
     doc.save(buf)
+    return buf.getvalue()
+
+
+# ── Intereses hasta el Cobro — PDF (Escrito judicial) ────────────────────────
+
+def generar_pdf_cobro(
+    resultado: dict,
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial en PDF — Intereses hasta el Cobro (mismo contenido que DOCX)."""
+    from xml.sax.saxutils import escape as _xe
+
+    caratula    = _limpiar_caratula(caratula)
+    capital     = resultado["capital"]
+    interes     = resultado["interes"]
+    fecha_desde = resultado["fecha_desde"]
+    fecha_hasta = resultado["fecha_hasta"]
+    ind_ini     = resultado["indice_inicial"]
+    ind_fin     = resultado["indice_final"]
+    coef        = resultado["coeficiente"]
+
+    monto_total    = interes
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+    monto_palabras = _numero_a_palabras(monto_total)
+    monto_numero   = _fmt(monto_total)
+
+    FONT   = _PDF_FONT
+    FONT_B = _PDF_FONT_BOLD
+    LS     = 18   # 1.5 × 12pt
+
+    def _ps(name, align=4, indent=35, space_after=6) -> ParagraphStyle:
+        return ParagraphStyle(
+            name, fontName=FONT, fontSize=12,
+            leading=LS, alignment=align,
+            firstLineIndent=indent, spaceAfter=space_after,
+        )
+
+    st_n  = _ps("cn")                           # normal justificado con sangría
+    st_l  = _ps("cl", align=0, indent=0)        # izquierda
+    st_c  = _ps("cc", align=1, indent=0, space_after=4)  # centrado
+
+    buf = io.BytesIO()
+    doc_pdf = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=3*cm, rightMargin=2*cm,
+        topMargin=2.5*cm, bottomMargin=2.5*cm,
+    )
+    story = []
+
+    # Título
+    story.append(Paragraph(
+        "<b><u>PRACTICA LIQUIDACION – INTERESES</u></b>",
+        _ps("ct", align=1, indent=0, space_after=12),
+    ))
+
+    # SEÑOR JUEZ FEDERAL
+    story.append(Paragraph(
+        "<b>SEÑOR JUEZ FEDERAL:</b>",
+        _ps("cj", align=0, indent=0, space_after=10),
+    ))
+
+    # Letrado + carátula
+    story.append(Paragraph(
+        f'<b>{_xe(nombre_letrado)}</b>'
+        f', CUIL {_xe(cuil_letrado)}, abogado, con personería acreditada en autos '
+        f'caratulados: "<b>{_xe(caratula)} - EXPTE. {_xe(expediente)}</b>", '
+        f'con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:',
+        _ps("ci", space_after=10),
+    ))
+
+    # I. OBJETO
+    story.append(Paragraph("<b><u>I. OBJETO:</u></b>", _ps("co1", align=0, indent=35)))
+    story.append(Paragraph(
+        "Que vengo por el presente a practicar liquidación de los intereses devengados "
+        "hasta el efectivo pago del crédito reconocido en autos, conforme las pautas "
+        "oportunamente establecidas y el criterio emergente de la sentencia firme.",
+        _ps("co2", space_after=10),
+    ))
+
+    # II. LIQUIDACION PRACTICADA
+    story.append(Paragraph("<b><u>II. LIQUIDACION PRACTICADA:</u></b>",
+                           _ps("cl2", align=0, indent=35)))
+    story.append(Paragraph(
+        "Para la confección de la presente liquidación se aplicó la Tasa Pasiva Promedio "
+        "del Banco Central de la República Argentina desde el día siguiente al que quedó "
+        "aprobada la liquidación precedente y hasta la fecha de efectivo pago, entendiendo "
+        "por tal aquella en que los fondos fueron efectivamente acreditados en la cuenta "
+        "bancaria del actor, todo ello conforme constancias de autos.",
+        st_n,
+    ))
+    story.append(Paragraph(
+        f"En consecuencia, la diferencia resultante a favor de la parte actora en concepto "
+        f"de intereses devengados hasta su efectivo pago asciende a la suma de PESOS "
+        f"<b>{_xe(monto_palabras)} ($ {_xe(monto_numero)})</b>.",
+        _ps("cl3", space_after=10),
+    ))
+
+    # PLANILLA DE LIQUIDACIÓN
+    story.append(Paragraph(
+        "<b>PLANILLA DE LIQUIDACIÓN</b>",
+        _ps("cpl", align=0, indent=0, space_after=3),
+    ))
+    _headers = ["Capital ($)", "Int. desde", "Int. hasta",
+                "Índice T₀", "Índice Tₘ", "Coeficiente", "Interés moratorio ($)"]
+    _data = [_headers, [
+        f"$ {_fmt(capital)}",
+        fecha_desde.strftime("%d/%m/%Y"),
+        fecha_hasta.strftime("%d/%m/%Y"),
+        f"{ind_ini:,.4f}",
+        f"{ind_fin:,.4f}",
+        f"{coef:.6f}",
+        f"$ {_fmt(interes)}",
+    ]]
+    _col_w = [w * cm for w in [2.5, 2.3, 2.3, 2.0, 2.0, 2.4, 2.5]]
+    _tbl = Table(_data, colWidths=_col_w)
+    _tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#1E3A5F")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  FONT_B),
+        ("FONTSIZE",      (0, 0), (-1, -1), 9),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("BACKGROUND",    (0, 1), (-1, 1),  colors.HexColor("#D8F3DC")),
+        ("FONTNAME",      (0, 1), (-1, 1),  FONT_B),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(_tbl)
+    story.append(Spacer(1, 0.4 * cm))
+
+    # III. DERECHO
+    story.append(Paragraph("<b><u>III. DERECHO:</u></b>",
+                           _ps("cd1", align=0, indent=35)))
+    story.append(Paragraph(
+        "La presente liquidación encuentra sustento en lo dispuesto en autos y en el "
+        "criterio de sentencia firme que reconoce la procedencia de los intereses devengados "
+        "hasta la íntegra satisfacción del crédito reconocido judicialmente.",
+        st_n,
+    ))
+    story.append(Paragraph(
+        "Asimismo, corresponde la aplicación de la tasa pasiva promedio del Banco Central "
+        "de la República Argentina para el período comprendido entre la aprobación de la "
+        "liquidación precedente y la efectiva acreditación de los fondos, en tanto durante "
+        "dicho lapso subsistió impaga la obligación a cargo de la demandada.",
+        _ps("cd2", space_after=10),
+    ))
+
+    # IV. PETITUM
+    story.append(Paragraph(
+        "<b><u>IV. PETITUM:</u></b> Por lo expuesto a V.S., solicito:",
+        _ps("cp1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "a) Tenga por practicada la liquidación de intereses devengados hasta su efectivo "
+        "pago conforme planilla que se acompaña.",
+        st_n,
+    ))
+    story.append(Paragraph(
+        "b) Oportunamente, apruebe la misma en cuanto por derecho corresponda.", st_n,
+    ))
+    story.append(Paragraph(
+        "c) Intime a la demandada al pago de las sumas resultantes.",
+        _ps("cp4", space_after=12),
+    ))
+
+    # Cierre centrado
+    story.append(Paragraph("<b>Proveer de conformidad,</b>", st_c))
+    story.append(Paragraph("<b>SERÁ JUSTICIA.</b>",
+                           _ps("cfj", align=1, indent=0, space_after=0)))
+
+    doc_pdf.build(story)
     return buf.getvalue()
 
 
@@ -717,6 +925,7 @@ def generar_docx_ejecucion(
     """Genera escrito judicial DOCX — Ejecución de Sentencia (PASO #1)."""
 
     # ── Datos ────────────────────────────────────────────────────────────────
+    caratula        = _limpiar_caratula(caratula)
     dia_120         = resultado["dia_120"]
     dia_121         = resultado["dia_121"]
     filas_a         = resultado["filas_a"]
@@ -741,7 +950,7 @@ def generar_docx_ejecucion(
     sec.right_margin  = DCm(2.0)
     sec.top_margin    = DCm(2.5)
     sec.bottom_margin = DCm(2.5)
-    doc.styles["Normal"].font.name = "Arial"
+    doc.styles["Normal"].font.name = "Calibri"
     doc.styles["Normal"].font.size = Pt(12)
 
     def _ls(p) -> None:
