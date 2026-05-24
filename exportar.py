@@ -393,7 +393,7 @@ def exportar_pdf_ejecucion(
     return buf.getvalue()
 
 
-# ── Ejecución de Sentencia — DOCX (Escrito judicial) ──────────────────────────
+# ── Intereses hasta el Cobro — DOCX (Escrito judicial) ───────────────────────
 
 def _numero_a_palabras(monto: float) -> str:
     """Convierte monto a palabras en castellano (mayúsculas) para escritos judiciales.
@@ -513,26 +513,25 @@ def _docx_add_data_row(table, row_idx: int, values: list,
         run.font.size = Pt(8)
 
 
-def generar_docx_ejecucion(
+def generar_docx_cobro(
     resultado: dict,
     letrado: dict,
     caratula: str,
     expediente: str,
 ) -> bytes:
-    """Genera escrito judicial DOCX — Ejecución de Sentencia (PASO #3)."""
+    """Genera escrito judicial DOCX — Intereses hasta el Cobro."""
 
     # ── Datos ────────────────────────────────────────────────────────────────
-    filas_a         = resultado["filas_a"]
-    capital_a_total = resultado["capital_a_total"]
-    res_a           = resultado["resultado_a"]
-    res_b           = resultado["resultado_b"]
-    fecha_hasta     = resultado["fecha_hasta"]
-    dia_121         = resultado["dia_121"]
+    capital      = resultado["capital"]
+    interes      = resultado["interes"]
+    fecha_desde  = resultado["fecha_desde"]
+    fecha_hasta  = resultado["fecha_hasta"]
+    fecha_t0     = resultado["fecha_t0"]
+    ind_ini      = resultado["indice_inicial"]
+    ind_fin      = resultado["indice_final"]
+    coef         = resultado["coeficiente"]
 
-    int_a_val  = float(res_a.get("interes", 0) or 0) if not res_a.get("error") else 0.0
-    int_b_val  = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
-    monto_total = int_a_val + int_b_val
-
+    monto_total    = interes
     nombre_letrado = letrado.get("nombre_completo", "").upper()
     cuil_letrado   = letrado.get("cuil", "")
 
@@ -633,100 +632,32 @@ def generar_docx_ejecucion(
         (".", False, False),
     ], space_after=10)
 
-    # ── PLANILLA TRAMO A ─────────────────────────────────────────────────────
-    p_la = doc.add_paragraph()
-    p_la.paragraph_format.first_line_indent = DCm(0)
-    p_la.paragraph_format.space_after = Pt(3)
-    ra = p_la.add_run("PLANILLA — TRAMO A")
-    ra.bold = True
-    ra.font.size = Pt(9)
+    # ── PLANILLA ─────────────────────────────────────────────────────────────
+    p_pl = doc.add_paragraph()
+    p_pl.paragraph_format.first_line_indent = DCm(0)
+    p_pl.paragraph_format.space_after = Pt(3)
+    rpl = p_pl.add_run("PLANILLA DE LIQUIDACIÓN")
+    rpl.bold = True
+    rpl.font.size = Pt(9)
 
-    n_rows_a = 1 + len(filas_a) + 1
-    tbl_a = doc.add_table(rows=n_rows_a, cols=2)
-    tbl_a.style = "Table Grid"
-    _docx_set_col_widths(tbl_a, [5.5, 10.5])
-    _docx_add_table_header(tbl_a, ["Período", "Capital proporcional ($)"])
-    for i, fila in enumerate(filas_a, start=1):
-        _docx_add_data_row(tbl_a, i, [fila["periodo"], f"$ {_fmt(fila['capital'])}"])
-    _docx_add_data_row(
-        tbl_a, n_rows_a - 1,
-        ["TOTAL TRAMO A", f"$ {_fmt(capital_a_total)}"],
-        bold=True, fill="FEF3CD",
-    )
-    _spacer(4)
-
-    # Cálculo Tramo A
-    if not res_a.get("error"):
-        tbl_calc = doc.add_table(rows=2, cols=6)
-        tbl_calc.style = "Table Grid"
-        _docx_set_col_widths(tbl_calc, [3.0, 2.5, 2.5, 2.5, 2.5, 3.0])
-        _docx_add_table_header(
-            tbl_calc,
-            ["Capital ($)", "Int. desde", "Int. hasta", "Índice T₀", "Índice Tₘ", "Interés moratorio ($)"],
-            fill="2D6A4F",
-        )
-        _docx_add_data_row(tbl_calc, 1, [
-            f"$ {_fmt(capital_a_total)}",
-            dia_121.strftime("%d/%m/%Y"),
-            fecha_hasta.strftime("%d/%m/%Y"),
-            f"{res_a['indice_inicial']:,.4f}",
-            f"{res_a['indice_final']:,.4f}",
-            f"$ {_fmt(res_a['interes'])}",
-        ], bold=True, fill="D8F3DC")
-        _spacer(6)
-
-    # ── PLANILLA TRAMO B ─────────────────────────────────────────────────────
-    if not res_b.empty:
-        df_b_ok = res_b[res_b["error"].isna()].copy()
-        if not df_b_ok.empty:
-            p_lb = doc.add_paragraph()
-            p_lb.paragraph_format.first_line_indent = DCm(0)
-            p_lb.paragraph_format.space_after = Pt(3)
-            rb = p_lb.add_run("PLANILLA — TRAMO B")
-            rb.bold = True
-            rb.font.size = Pt(9)
-
-            n_rows_b = 1 + len(df_b_ok) + 1
-            tbl_b = doc.add_table(rows=n_rows_b, cols=6)
-            tbl_b.style = "Table Grid"
-            _docx_set_col_widths(tbl_b, [2.2, 2.8, 2.5, 2.5, 3.0, 3.0])
-            _docx_add_table_header(
-                tbl_b,
-                ["Período", "Capital ($)", "Int. desde", "Fecha pago", "Interés ($)", "Total ($)"],
-            )
-            for i, (_, row) in enumerate(df_b_ok.iterrows(), start=1):
-                _docx_add_data_row(tbl_b, i, [
-                    row["periodo"],
-                    f"$ {_fmt(row['capital'])}",
-                    row["fecha_desde"].strftime("%d/%m/%Y"),
-                    row["fecha_pago"].strftime("%d/%m/%Y"),
-                    f"$ {_fmt(row['interes'])}",
-                    f"$ {_fmt(row['total'])}",
-                ])
-            t_int_b_d = df_b_ok["interes"].sum()
-            t_tot_b_d = df_b_ok["total"].sum()
-            _docx_add_data_row(
-                tbl_b, n_rows_b - 1,
-                ["TOTAL TRAMO B", "", "", "", f"$ {_fmt(t_int_b_d)}", f"$ {_fmt(t_tot_b_d)}"],
-                bold=True, fill="FEF3CD",
-            )
-            _spacer(6)
-
-    # Resultado final
-    tbl_res = doc.add_table(rows=2, cols=2)
-    tbl_res.style = "Table Grid"
-    _docx_set_col_widths(tbl_res, [12.0, 4.0])
+    # Tabla de cálculo: 7 columnas, fila única de datos
+    tbl = doc.add_table(rows=2, cols=7)
+    tbl.style = "Table Grid"
+    _docx_set_col_widths(tbl, [2.5, 2.3, 2.3, 2.0, 2.0, 2.4, 2.5])
     _docx_add_table_header(
-        tbl_res,
-        ["RESULTADO FINAL — Intereses moratorios Tramo A + Tramo B", f"$ {_fmt(monto_total)}"],
-        fill="052E16",
+        tbl,
+        ["Capital ($)", "Int. desde", "Int. hasta",
+         "Índice T₀", "Índice Tₘ", "Coeficiente", "Interés moratorio ($)"],
     )
-    _docx_add_data_row(
-        tbl_res, 1,
-        ["Calculado hasta — Efectivo pago conforme recibo que consta en autos",
-         fecha_hasta.strftime("%d/%m/%Y")],
-        bold=True, fill="F0FDF4",
-    )
+    _docx_add_data_row(tbl, 1, [
+        f"$ {_fmt(capital)}",
+        fecha_desde.strftime("%d/%m/%Y"),
+        fecha_hasta.strftime("%d/%m/%Y"),
+        f"{ind_ini:,.4f}",
+        f"{ind_fin:,.4f}",
+        f"{coef:.6f}",
+        f"$ {_fmt(interes)}",
+    ], bold=True, fill="D8F3DC")
     _spacer(10)
 
     # ── III. DERECHO ─────────────────────────────────────────────────────────

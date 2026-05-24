@@ -12,7 +12,7 @@ from auth import list_abogados, list_feriados_extra, log_calculo, importar_puent
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_ejecucion, primer_dia_mes_siguiente
 from calendario import dia_habil_n
-from exportar import exportar_excel_ejecucion, exportar_pdf_ejecucion, generar_docx_ejecucion
+from exportar import exportar_excel_ejecucion, exportar_pdf_ejecucion
 from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
@@ -400,7 +400,7 @@ if st.session_state.get("eje_resultado") is not None:
 
     _uname_eje = (get_session_user() or {}).get("username", "desconocido")
 
-    col_xl, col_pdf, col_docx = st.columns(3)
+    col_xl, col_pdf = st.columns(2)
     with col_xl:
         xlsx_bytes = exportar_excel_ejecucion(res)
         if st.download_button(
@@ -421,15 +421,3 @@ if st.session_state.get("eje_resultado") is not None:
             use_container_width=True,
         ):
             log_uso(_uname_eje, "ejecucion", "pdf")
-    with col_docx:
-        _caratula  = exp.get("Carátula", exp.get("Caratula", ""))
-        _expediente = exp.get("Expediente", "")
-        docx_bytes = generar_docx_ejecucion(res, abogado, _caratula, _expediente)
-        if st.download_button(
-            "⬇ Descargar escrito DOCX",
-            data=docx_bytes,
-            file_name=f"escrito_ejecucion_{nombre_base}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-        ):
-            log_uso(_uname_eje, "ejecucion", "docx")

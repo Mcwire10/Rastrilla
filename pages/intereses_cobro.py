@@ -11,7 +11,7 @@ import streamlit as st
 from auth import list_abogados, importar_puentes_anio, log_uso, get_session_user
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_interes_simple
-from exportar import exportar_pdf
+from exportar import exportar_pdf, generar_docx_cobro
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
 with st.sidebar:
@@ -232,9 +232,10 @@ if st.session_state.get("resultado_cobro"):
         titulo="INTERESES APROBADOS HASTA COBRO — DOCTRINA RASTRILLA · VEGA",
     )
 
-    _uname_cob = (get_session_user() or {}).get("username", "desconocido")
+    _uname_cob  = (get_session_user() or {}).get("username", "desconocido")
+    _caratula_c = exp.get("Carátula", exp.get("Caratula", ""))
 
-    col_xl, col_pdf = st.columns(2)
+    col_xl, col_pdf, col_docx = st.columns(3)
     with col_xl:
         if st.download_button(
             "⬇ Descargar Excel",
@@ -253,3 +254,13 @@ if st.session_state.get("resultado_cobro"):
             use_container_width=True,
         ):
             log_uso(_uname_cob, "cobro", "pdf")
+    with col_docx:
+        docx_bytes = generar_docx_cobro(res, abogado, _caratula_c, expediente_num)
+        if st.download_button(
+            "⬇ Descargar escrito DOCX",
+            data=docx_bytes,
+            file_name=f"escrito_cobro_{nombre_base}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        ):
+            log_uso(_uname_cob, "cobro", "docx")
