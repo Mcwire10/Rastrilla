@@ -1036,7 +1036,7 @@ def generar_docx_ejecucion(
     )
 
     # ── II.- CUMPLIMIENTO ────────────────────────────────────────────────────
-    _section("II.-", 'CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"')
+    _section("II.-", 'CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN FALLO "VEGA" y "RASTRILLA"')
     _par(
         "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
         "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
@@ -1233,4 +1233,325 @@ def generar_docx_ejecucion(
 
     buf = io.BytesIO()
     doc.save(buf)
+    return buf.getvalue()
+
+
+# ── Ejecución de Sentencia — PDF (Escrito judicial) ───────────────────────────
+
+def generar_pdf_ejecucion_escrito(
+    resultado: dict,
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial en PDF — Ejecución de Sentencia (mismo contenido que DOCX)."""
+    from xml.sax.saxutils import escape as _xe
+
+    caratula        = _limpiar_caratula(caratula)
+    dia_120         = resultado["dia_120"]
+    dia_121         = resultado["dia_121"]
+    filas_a         = resultado["filas_a"]
+    capital_a_total = resultado["capital_a_total"]
+    res_a           = resultado["resultado_a"]
+    res_b           = resultado["resultado_b"]
+    fecha_hasta     = resultado["fecha_hasta"]
+
+    int_a_val   = float(res_a.get("interes", 0) or 0) if not res_a.get("error") else 0.0
+    int_b_val   = float(res_b["interes"].sum()) if not res_b.empty and "interes" in res_b.columns else 0.0
+    monto_total = int_a_val + int_b_val
+
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+    monto_palabras = _numero_a_palabras(monto_total).lower()
+    monto_numero   = _fmt(monto_total)
+
+    FONT   = _PDF_FONT
+    FONT_B = _PDF_FONT_BOLD
+    LS     = 18  # 1.5 × 12pt
+
+    def _ps(name, align=4, indent=35, space_after=6) -> ParagraphStyle:
+        return ParagraphStyle(
+            name, fontName=FONT, fontSize=12,
+            leading=LS, alignment=align,
+            firstLineIndent=indent, spaceAfter=space_after,
+        )
+
+    buf = io.BytesIO()
+    doc_pdf = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=3 * cm, rightMargin=2 * cm,
+        topMargin=2.5 * cm, bottomMargin=2.5 * cm,
+    )
+    story = []
+
+    # Título
+    story.append(Paragraph(
+        "<b><u>PRACTICA LIQUIDACION DE INTERESES MORATORIOS</u></b>",
+        _ps("et", align=1, indent=0, space_after=12),
+    ))
+
+    # SEÑOR JUEZ FEDERAL
+    story.append(Paragraph(
+        "<b>SEÑOR JUEZ FEDERAL:</b>",
+        _ps("ej", align=0, indent=0, space_after=10),
+    ))
+
+    # Letrado + carátula
+    story.append(Paragraph(
+        f'<b>{_xe(nombre_letrado)}</b>'
+        f', CUIL {_xe(cuil_letrado)}, abogado, con personería acreditada en autos '
+        f'caratulados: "<b>{_xe(caratula)} - EXPTE. {_xe(expediente)}</b>", '
+        f'con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:',
+        _ps("ei", space_after=10),
+    ))
+
+    # I.- OBJETO
+    story.append(Paragraph(
+        "<b>I.-</b> OBJETO",
+        _ps("eo1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de "
+        "intereses moratorios, practicada conforme los lineamientos expresamente establecidos "
+        "por V.S. en fallo «Rastrilla» y «VEGA», solicitando oportunamente su aprobación.",
+        _ps("eo2", space_after=10),
+    ))
+
+    # II.- CUMPLIMIENTO
+    story.append(Paragraph(
+        '<b>II.-</b> CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN FALLO "VEGA" y "RASTRILLA"',
+        _ps("ec1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
+        "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
+        _ps("ec2"),
+    ))
+    story.append(Paragraph(
+        "En tal sentido, se procedió a distinguir expresamente:",
+        _ps("ec3", space_after=6),
+    ))
+
+    # A)
+    story.append(Paragraph(
+        "<b>A) Períodos anteriores al vencimiento del plazo de 120 días</b>",
+        _ps("ea1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Respecto de los períodos comprendidos con anterioridad al vencimiento del "
+        "plazo legal de ciento veinte (120) días hábiles para el cumplimiento de la sentencia, "
+        "se determinó el retroactivo correspondiente por las diferencias devengadas hasta el "
+        f"día 120, es decir hasta el <b>{dia_120.strftime('%d/%m/%Y')}</b>.",
+        _ps("ea2"),
+    ))
+    story.append(Paragraph(
+        "Posteriormente, sobre el monto total resultante, se calcularon intereses moratorios "
+        "aplicando la tasa pasiva promedio del BCRA desde el día 121 —momento de constitución "
+        "automática en mora conforme art. 886 CCCN— y hasta la fecha de efectiva transferencia "
+        "del embargo.",
+        _ps("ea3"),
+    ))
+
+    # B)
+    story.append(Paragraph(
+        "<b>B) Períodos posteriores al vencimiento del plazo de 120 días</b>",
+        _ps("eb1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Asimismo, para los períodos posteriores al vencimiento del referido plazo, se "
+        "individualizó cada diferencia mensual devengada y se calcularon los intereses moratorios "
+        f"correspondientes desde que cada suma fue debida (<b>{dia_121.strftime('%d/%m/%Y')}</b>) "
+        f"y hasta la fecha de transferencia del embargo (<b>{fecha_hasta.strftime('%d/%m/%Y')}</b>).",
+        _ps("eb2"),
+    ))
+    story.append(Paragraph(
+        "De este modo, la metodología aplicada recepta íntegramente los parámetros fijados "
+        "por V.S., respetando la diferenciación temporal expresamente establecida en la "
+        "resolución dictada.",
+        _ps("eb3", space_after=10),
+    ))
+
+    # III.- PROCEDENCIA
+    story.append(Paragraph(
+        "<b>III.-</b> PROCEDENCIA DE LOS INTERESES MORATORIOS",
+        _ps("ep1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Cabe destacar que V.S. ya ha reconocido expresamente la procedencia de los "
+        "intereses moratorios reclamados, dejando establecido que la ANSES incurrió en mora "
+        "automática una vez vencido el plazo de ciento veinte (120) días hábiles previsto "
+        "para el cumplimiento de la sentencia.",
+        _ps("ep2"),
+    ))
+    story.append(Paragraph(
+        "En efecto, la resolución dictada en autos sostuvo expresamente que:",
+        _ps("ep3", space_after=4),
+    ))
+    story.append(Paragraph(
+        "«a partir del día 121 —momento en el que se produce el incumplimiento de la "
+        "sentencia—, la demandada ANSES se constituyó en mora en forma automática (conf. "
+        "art. 886 del C.C.C.N) y debe intereses moratorios (conf. art. 768 del C.C.C.N).»",
+        _ps("ep4", indent=70, space_after=6),
+    ))
+    story.append(Paragraph(
+        "Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
+        "efectivo pago, extremo que ha sido debidamente respetado en la liquidación acompañada.",
+        _ps("ep5", space_after=10),
+    ))
+
+    # IV.- PLANILLA
+    story.append(Paragraph(
+        "<b>IV.-</b> PLANILLA – ACOMPAÑA",
+        _ps("epl1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "Que se acompaña planilla detallada de cálculo de intereses moratorios confeccionada "
+        "conforme las pautas indicadas por V.S., discriminando períodos, capitales, fechas de "
+        "mora, tasa aplicada hasta el momento de su efectivo pago. En consecuencia, resulta a "
+        f"favor de la actora monto de <b>pesos {_xe(monto_palabras)} ($ {_xe(monto_numero)})</b>.",
+        _ps("epl2", space_after=8),
+    ))
+
+    # Tramo A — períodos
+    story.append(Paragraph("<b>PLANILLA — TRAMO A</b>",
+                           _ps("eta", align=0, indent=0, space_after=3)))
+    if filas_a:
+        rows_a = [["Período", "Capital proporcional ($)"]]
+        for f in filas_a:
+            rows_a.append([f["periodo"], f"$ {_fmt(f['capital'])}"])
+        rows_a.append(["TOTAL TRAMO A", f"$ {_fmt(capital_a_total)}"])
+        t_a1 = Table(rows_a, colWidths=[4 * cm, 5 * cm], repeatRows=1)
+        t_a1.setStyle(TableStyle([
+            ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1E3A5F")),
+            ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+            ("FONTNAME",       (0, 0),  (-1, 0),  FONT_B),
+            ("FONTSIZE",       (0, 0),  (-1, -1), 9),
+            ("ALIGN",          (1, 0),  (1, -1),  "RIGHT"),
+            ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#eef2f7")]),
+            ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#fef3cd")),
+            ("FONTNAME",       (0, -1), (-1, -1), FONT_B),
+            ("GRID",           (0, 0),  (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ("VALIGN",         (0, 0),  (-1, -1), "MIDDLE"),
+            ("TOPPADDING",     (0, 0),  (-1, -1), 3),
+            ("BOTTOMPADDING",  (0, 0),  (-1, -1), 3),
+        ]))
+        story.append(t_a1)
+        story.append(Spacer(1, 0.2 * cm))
+
+    # Tramo A — cálculo
+    if not res_a.get("error"):
+        rows_calc = [
+            ["Capital ($)", "Int. desde", "Int. hasta", "Índice T₀", "Índice Tₘ", "Interés moratorio ($)"],
+            [
+                f"$ {_fmt(capital_a_total)}",
+                dia_121.strftime("%d/%m/%Y"),
+                fecha_hasta.strftime("%d/%m/%Y"),
+                f"{res_a['indice_inicial']:,.4f}",
+                f"{res_a['indice_final']:,.4f}",
+                f"$ {_fmt(res_a['interes'])}",
+            ],
+        ]
+        t_a2 = Table(rows_calc, colWidths=[w * cm for w in [3.0, 2.5, 2.5, 2.5, 2.5, 3.0]])
+        t_a2.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#2D6A4F")),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0),  FONT_B),
+            ("FONTSIZE",      (0, 0), (-1, -1), 9),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("BACKGROUND",    (0, 1), (-1, 1),  colors.HexColor("#D8F3DC")),
+            ("FONTNAME",      (0, 1), (-1, 1),  FONT_B),
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ]))
+        story.append(t_a2)
+        story.append(Spacer(1, 0.3 * cm))
+
+    # Tramo B
+    if not res_b.empty:
+        df_b_ok = res_b[res_b["error"].isna()].copy()
+        if not df_b_ok.empty:
+            story.append(Paragraph("<b>PLANILLA — TRAMO B</b>",
+                                   _ps("etb", align=0, indent=0, space_after=3)))
+            rows_b = [["Período", "Capital ($)", "Int. desde", "Fecha pago", "Interés ($)", "Total ($)"]]
+            for _, row in df_b_ok.iterrows():
+                rows_b.append([
+                    row["periodo"],
+                    f"$ {_fmt(row['capital'])}",
+                    row["fecha_desde"].strftime("%d/%m/%Y"),
+                    row["fecha_pago"].strftime("%d/%m/%Y"),
+                    f"$ {_fmt(row['interes'])}",
+                    f"$ {_fmt(row['total'])}",
+                ])
+            t_ib = df_b_ok["interes"].sum()
+            t_tb = df_b_ok["total"].sum()
+            rows_b.append(["TOTAL TRAMO B", "", "", "",
+                            f"$ {_fmt(t_ib)}", f"$ {_fmt(t_tb)}"])
+            t_b = Table(rows_b, colWidths=[w * cm for w in [2.2, 2.8, 2.5, 2.5, 3.0, 3.0]],
+                        repeatRows=1)
+            t_b.setStyle(TableStyle([
+                ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1E3A5F")),
+                ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+                ("FONTNAME",       (0, 0),  (-1, 0),  FONT_B),
+                ("FONTSIZE",       (0, 0),  (-1, -1), 9),
+                ("ALIGN",          (0, 0),  (-1, -1), "CENTER"),
+                ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#eef2f7")]),
+                ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#fef3cd")),
+                ("FONTNAME",       (0, -1), (-1, -1), FONT_B),
+                ("GRID",           (0, 0),  (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ("VALIGN",         (0, 0),  (-1, -1), "MIDDLE"),
+                ("TOPPADDING",     (0, 0),  (-1, -1), 3),
+                ("BOTTOMPADDING",  (0, 0),  (-1, -1), 3),
+            ]))
+            story.append(t_b)
+            story.append(Spacer(1, 0.3 * cm))
+
+    # Resultado final
+    _aw = (21.0 - 3.0 - 2.0) * cm
+    rows_final = [
+        ["RESULTADO FINAL — Intereses moratorios Tramo A + Tramo B", f"$ {_fmt(monto_total)}"],
+        ["Calculado hasta — Efectivo pago conforme recibo que consta en autos",
+         fecha_hasta.strftime("%d/%m/%Y")],
+    ]
+    t_fin = Table(rows_final, colWidths=[_aw * 0.72, _aw * 0.28])
+    t_fin.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0),  colors.HexColor("#052E16")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0),  FONT_B),
+        ("FONTSIZE",      (0, 0), (-1, 0),  10),
+        ("BACKGROUND",    (0, 1), (-1, 1),  colors.HexColor("#F0FDF4")),
+        ("FONTNAME",      (0, 1), (-1, 1),  FONT_B),
+        ("FONTSIZE",      (0, 1), (-1, 1),  9),
+        ("ALIGN",         (1, 0), (1, -1),  "RIGHT"),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.HexColor("#16A34A")),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+    ]))
+    story.append(t_fin)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # V.- PETITORIO
+    story.append(Paragraph(
+        "<b>V.-</b> PETITORIO: Por todo lo expuesto, a V.S. solicito:",
+        _ps("ev1", align=0, indent=35),
+    ))
+    story.append(Paragraph(
+        "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
+        _ps("ev2"),
+    ))
+    story.append(Paragraph(
+        "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
+        _ps("ev3", space_after=12),
+    ))
+
+    # Cierre centrado
+    story.append(Paragraph("<b>Proveer de conformidad,</b>",
+                           _ps("ecc", align=1, indent=0, space_after=4)))
+    story.append(Paragraph("<b>SERÁ JUSTICIA.</b>",
+                           _ps("ecj", align=1, indent=0, space_after=0)))
+
+    doc_pdf.build(story)
     return buf.getvalue()

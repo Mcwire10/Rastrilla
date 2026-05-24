@@ -12,7 +12,7 @@ from auth import list_abogados, list_feriados_extra, log_calculo, importar_puent
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_ejecucion, primer_dia_mes_siguiente
 from calendario import dia_habil_n
-from exportar import exportar_excel_ejecucion, exportar_pdf_ejecucion, generar_docx_ejecucion
+from exportar import exportar_excel_ejecucion, generar_pdf_ejecucion_escrito, generar_docx_ejecucion
 from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ if st.session_state.get("eje_resultado") is not None:
         ):
             log_uso(_uname_eje, "ejecucion", "excel")
     with col_pdf:
-        pdf_bytes = exportar_pdf_ejecucion(res)
+        pdf_bytes = generar_pdf_ejecucion_escrito(res, abogado, _caratula_e, _expediente_e)
         if st.download_button(
             "⬇ Descargar PDF",
             data=pdf_bytes,
