@@ -17,7 +17,7 @@
 | **Repo** | `https://github.com/Mcwire10/Rastrilla` (privado) |
 | **Rama activa** | `dev` — pendiente merge a `main` tras UAT completo |
 | **Stack** | Python 3.11 · Streamlit ≥ 1.36 · SQLite · pandas · pdfplumber · python-docx · reportlab · openpyxl |
-| **Checkpoint** | `65461f3` — rama `dev` — Sprint 4 completo (escritos DOCX + panel de uso + admin pass) |
+| **Checkpoint** | `31d014a` — rama `dev` — Sprint 4 + MODs escritos (Calibri, PDF escrito, parseo limpio) |
 
 ---
 
@@ -538,7 +538,8 @@ for cada fila en df_planilla:
      con el monto total en tipografía grande, y leyenda "Calculado hasta DD/MM/YYYY —
      efectivo pago conforme recibo que consta en autos"
    - 3 métricas bajo el box: Capital total · Intereses Tramo A · Intereses Tramo B
-10. **Exportar**: 3 columnas (Excel 2 hojas | PDF | Escrito DOCX)
+10. **Exportar**: 3 columnas (Excel 2 hojas | PDF escrito | Word escrito)
+    - Nombre PDF/DOCX: `INT1M - {APELLIDO}.pdf / .docx`
 
 ### Resultado final — box verde (HTML inline)
 ```python
@@ -600,8 +601,9 @@ Session state: `amp_filas`, `amp_resultado`, `amp_fecha_pago`
 5. Datos: `capital` + `fecha_aprobacion` + `fecha_cobro`
 6. Calcular → `calcular_interes_simple()`
 7. Resultado: 3 métricas + expander (T₀=aprobacion-1día, T₀ fecha, Tₘ, coeficiente)
-8. Exportar: 3 columnas (Excel detallado | PDF fila única | Escrito DOCX)
-   - PDF fila única: `periodo = "Aprobado DD/MM/YYYY"`
+8. Exportar: **2 columnas** (PDF escrito | Word escrito)
+   - Nombre de archivo: `INT M - {APELLIDO}.pdf / .docx` donde `apellido = caratula.split(",")[0]`
+   - Excel eliminado de esta calculadora
 
 Session state: `resultado_cobro`
 
@@ -628,29 +630,46 @@ parsear_archivo(file, filename) → (pd.DataFrame, str)
 ## 15. Exportación (`exportar.py`)
 
 ```python
-# Ampliación / Intereses hasta Cobro
+# Ampliación (planilla tabulada)
 exportar_excel(df) → bytes
 exportar_pdf(df, titulo=...) → bytes
 
-# Ejecución de Sentencia
+# Ejecución de Sentencia (planilla tabulada para Excel)
 exportar_excel_ejecucion(resultado) → bytes   # 2 hojas: Tramo A / Tramo B
-exportar_pdf_ejecucion(resultado, titulo=...) → bytes
+exportar_pdf_ejecucion(resultado, titulo=...) → bytes  # NO usado en prod (reemplazado por escrito)
 
-# Escritos judiciales DOCX
+# Escritos judiciales — DOCX
 generar_docx_cobro(resultado, letrado, caratula, expediente) → bytes
 generar_docx_ejecucion(resultado, letrado, caratula, expediente) → bytes
 
-# Helper (usado internamente por ambas funciones DOCX)
+# Escritos judiciales — PDF (misma estructura que los DOCX, via ReportLab)
+generar_pdf_cobro(resultado, letrado, caratula, expediente) → bytes
+generar_pdf_ejecucion_escrito(resultado, letrado, caratula, expediente) → bytes
+
+# Helpers de limpieza (aplicados en páginas Y dentro de cada función generadora)
+_limpiar_caratula(caratula: str) → str   # elimina "(agregar/quitar...)" y similares
+limpiar_expediente(valor: str) → str     # extrae solo SIGLA NUMERO/AÑO (ej: "FMZ 041824/2019")
+
+# Helper interno
 _numero_a_palabras(monto: float) → str   # 250000.50 → "DOSCIENTOS CINCUENTA MIL CON 50/100"
 ```
 
-PDF general: reportlab, A4 landscape. Header azul `#1e3a5f`, filas alternadas, total en amarillo `#fef3cd`.
+PDF planilla (exportar_pdf): reportlab, A4 landscape. Header azul `#1e3a5f`, filas alternadas, total en amarillo `#fef3cd`.
+PDF escrito (generar_pdf_*): reportlab, A4 portrait, misma estructura que el DOCX.
 PDF Ejecución Tramo A: header verde `#2d6a4f`, dato en verde claro `#d8f3dc`.
 PDF Resultado final: header verde oscuro `#052e16`, fila dato en verde muy claro `#f0fdf4`.
 
+### Registro de fuentes Calibri para PDF
+
+Al importar `exportar.py` se intenta registrar Calibri desde rutas del sistema:
+- Windows: `C:\Windows\Fonts\calibri.ttf` / `calibrib.ttf`
+- Linux: `/usr/share/fonts/truetype/msttcorefonts/Calibri.ttf`
+
+Variables de módulo: `_PDF_FONT` / `_PDF_FONT_BOLD` → `"Calibri"` si disponible, `"Helvetica"` como fallback.
+
 ### DOCX — `generar_docx_cobro` (Intereses hasta el Cobro)
 
-Basado en `PUNTO 3.pdf`. Firma: `(resultado: dict, letrado: dict, caratula: str, expediente: str) → bytes`.
+Basado en `PUNTO 3.pdf` + MODs aplicados. Firma: `(resultado: dict, letrado: dict, caratula: str, expediente: str) → bytes`.
 
 Campos dinámicos del `resultado`:
 ```python
@@ -658,18 +677,21 @@ Campos dinámicos del `resultado`:
  "indice_inicial", "indice_final", "coeficiente"}
 ```
 
-Zonas editadas (marcadas en rojo en el PDF template):
-1. `nombre_completo` + `cuil` del letrado (negrita)
-2. `caratula - EXPTE. expediente` (negrita)
-3. Monto en palabras **UPPERCASE** + número AR en negrita: `PESOS DOSCIENTOS MIL ($ 200.000,00)`
-4. Tabla de cálculo única: Capital | Int. desde | Int. hasta | Índice T₀ | Índice Tₘ | Coeficiente | Interés ($)
-5. Boilerplate completo: secciones I–IV, Petitum, SERÁ JUSTICIA
-
-Formato DOCX: Arial 12pt, A4, márgenes 3cm izq / 2cm der / 2.5cm sup-inf. Tabla con `"Table Grid"`.
+Formato y reglas:
+- **Fuente**: Calibri 12pt · **Interlineado**: 1.5 en todo el documento
+- **Márgenes**: 3cm izq / 2cm der / 2.5cm sup-inf · A4 portrait
+- **Título**: "PRACTICA LIQUIDACION – INTERESES" — negrita + subrayado + centrado
+- **Carátula**: entre comillas dobles normales `"..."` (no `«»`)
+- **"Proveer de conformidad,"**: negrita + centrado
+- **"SERÁ JUSTICIA."**: negrita + centrado
+- Tabla: `"Table Grid"`, colores via `_docx_shade_cell(cell, "RRGGBB")`
+- Monto en palabras **UPPERCASE**: `PESOS DOSCIENTOS MIL ($ 200.000,00)`
+- Secciones: I. OBJETO · II. LIQUIDACION PRACTICADA · III. DERECHO · IV. PETITUM
+- Limpieza automática: `_limpiar_caratula()` + `limpiar_expediente()` al inicio
 
 ### DOCX — `generar_docx_ejecucion` (Ejecución de Sentencia)
 
-Basado en `PUNTO 1.pdf`. Misma firma que `generar_docx_cobro`.
+Basado en `PUNTO 1.pdf` + MODs aplicados. Misma firma que `generar_docx_cobro`.
 
 Campos dinámicos del `resultado` (estructura de `calcular_ejecucion()`):
 ```python
@@ -677,17 +699,42 @@ Campos dinámicos del `resultado` (estructura de `calcular_ejecucion()`):
  "resultado_a", "resultado_b", "fecha_hasta"}
 ```
 
-Zonas editadas (marcadas en rojo en el PDF template):
-1. `nombre_completo` + `cuil` del letrado (negrita)
-2. `caratula - EXPTE. expediente` (negrita)
-3. `dia_120` en negrita en sección II.A: "...hasta el **03/07/2024**."
-4. `dia_121` y `fecha_hasta` en negrita en sección II.B
-5. Monto en palabras **lowercase** + número AR en negrita en sección IV:
-   `pesos quinientos mil... ($ 500.000,00)`
-6. Planilla Tramo A (tabla de períodos + tabla de cálculo único) + Planilla Tramo B + resultado final
-7. Boilerplate completo: secciones I–V, Petitorio (1. y 2.), SERÁ JUSTICIA
+Formato y reglas:
+- **Fuente**: Calibri 12pt · **Interlineado**: 1.5 en todo el documento
+- **Título**: "PRACTICA LIQUIDACION DE INTERESES MORATORIOS" — negrita + subrayado + centrado
+- **Carátula**: entre comillas dobles normales `"..."` (no `«»`)
+- **Sección II título**: `CUMPLIMIENTO... EN FALLO "VEGA" y "RASTRILLA"` (FALLO fuera de comillas)
+- **"Proveer de conformidad,"**: centrado (sin negrita — diferencia con cobro)
+- **"SERÁ JUSTICIA."**: negrita + centrado
+- `dia_120` en negrita en sección II.A · `dia_121` y `fecha_hasta` en negrita en II.B
+- Monto en palabras **lowercase** en sección IV: `pesos quinientos mil... ($ 500.000,00)`
+- Planilla Tramo A (tabla períodos + cálculo único) + Planilla Tramo B + resultado final
+- Secciones: I.- OBJETO · II.- CUMPLIMIENTO · III.- PROCEDENCIA · IV.- PLANILLA · V.- PETITORIO
+- Limpieza automática: `_limpiar_caratula()` + `limpiar_expediente()` al inicio
 
-Diferencia clave vs Cobro: el monto va en **minúsculas** en el texto (per el template original).
+### PDF escritos — `generar_pdf_cobro` y `generar_pdf_ejecucion_escrito`
+
+Generan exactamente el mismo contenido que los DOCX respectivos, usando ReportLab (A4 portrait).
+Estructura de párrafos con `ParagraphStyle` — leading=18 (1.5 × 12pt), align=JUSTIFY, sangría 35pt.
+Las tablas (planillas) se incluyen inline en el story de ReportLab.
+Las páginas usan estas funciones en el botón "Descargar PDF" — **no** la función `exportar_pdf_ejecucion`.
+
+### `limpiar_expediente` — regla de dos capas
+
+```python
+def limpiar_expediente(valor: str) -> str:
+    """Extrae solo el número de expediente en formato SIGLA NUMERO/AÑO."""
+    m = re.search(r"(?:[A-Za-z]{2,5}\s+)?\d+/\d{4}", valor)
+    return m.group(0).strip() if m else valor.strip()
+```
+
+Aplicado en **2 capas**:
+1. **Capa página**: `expediente_num = limpiar_expediente(exp.get("Expediente", ""))` — en las 3 calculadoras (display, log DB, exportación)
+2. **Capa generadora**: al inicio de cada función `generar_docx_*` y `generar_pdf_*`, como garantía
+
+Ejemplos:
+- `"FMZ 041824/2019 (agregar/quitar a mis expedientes)"` → `"FMZ 041824/2019"` ✓
+- `"041824/2019"` → `"041824/2019"` ✓
 
 ---
 
@@ -816,7 +863,7 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 - `init_db()` verifica el hash: si coincide con la contraseña por defecto → fuerza `primer_login = 1`
 - Una vez que cambian la contraseña, el hash no coincide más → no se vuelve a tocar
 
-### ✅ Sprint 4 — rama `dev` (checkpoint `65461f3`)
+### ✅ Sprint 4 — rama `dev` (checkpoint original `65461f3`)
 
 **`7f4a619` → `49aba84` → `65461f3` — Escritos judiciales DOCX:**
 - `exportar.py`: `_numero_a_palabras()` para montos en palabras castellano (hasta millones + centavos)
@@ -834,8 +881,45 @@ Validado: inicio 29/11/2023 + extras (01/04/2024, 21/06/2024) → día 120 = **0
 **`d66b999` — Cambio de contraseña del admin:**
 - `pages/admin.py`: sección "🔑 Cambiar contraseña" al final del panel (verifica pass actual antes de guardar)
 
+### ✅ MODs escritos judiciales — rama `dev` (checkpoint actual `31d014a`)
+
+**`91770c9` — cobro: MOD PASO #3**
+- Carátula entre comillas normales `"..."` (no `«»`)
+- Interlineado 1.5 en todo el documento DOCX
+- "Proveer de conformidad," en negrita + centrado · "SERÁ JUSTICIA." negrita + centrado
+- Exportar cobro: solo **2 columnas** (PDF + Word) — Excel eliminado
+- Nombre de archivo: `INT M - {APELLIDO}.pdf / .docx`
+
+**`e37213a` — ejecucion: MOD PASO 1**
+- Título con negrita + **subrayado**
+- Carátula entre comillas normales `"..."` (no `«»`)
+- Sección II: `FALLO "VEGA" y "RASTRILLA"` (FALLO fuera de comillas, solo los fallos van entre comillas)
+- Interlineado 1.5 en todo el documento DOCX
+- Cierre centrado: "Proveer de conformidad," + "SERÁ JUSTICIA."
+- Nombre de archivo: `INT1M - {APELLIDO}.pdf / .docx`
+
+**`022b442` — cobro: tipografía + PDF como escrito**
+- Fuente DOCX cambiada de Arial → **Calibri 12pt**
+- Nuevo `generar_pdf_cobro()`: PDF con el escrito completo (igual que DOCX), vía ReportLab A4 portrait
+- `_limpiar_caratula()` elimina "(agregar/quitar...)" automáticamente
+
+**`af3a506` — ejecucion+cobro: PDF escrito + comillas sección II corregidas**
+- Nuevo `generar_pdf_ejecucion_escrito()`: PDF con el escrito completo para ejecución
+- Ambos PDFs incluyen planillas inline en el escrito (no reemplazan las tablas con el texto)
+- `pages/ejecucion.py`: botón PDF ahora usa `generar_pdf_ejecucion_escrito`
+- Sección II corregida definitivamente: `FALLO "VEGA" y "RASTRILLA"`
+
+**`3053030` — parser: `limpiar_expediente`**
+- Nueva función `limpiar_expediente(valor)` en `exportar.py`
+- Regex `(?:[A-Za-z]{2,5}\s+)?\d+/\d{4}` — extrae solo `SIGLA NUMERO/AÑO`
+- Aplicado en las 3 páginas: display, log DB, nombres de archivo
+
+**`31d014a` — exportar: garantía doble en generadoras**
+- `limpiar_expediente()` aplicado también dentro de las 4 funciones generadoras
+- Las funciones nunca pueden producir un expediente sucio, independientemente de lo que pase en la página
+
 ### 🔜 Pendiente
-- **DOCX Ampliación de Ejecución**: no hay ejemplo del usuario todavía
+- **DOCX + PDF Ampliación de Ejecución**: no hay ejemplo del usuario todavía
 - Merge `dev` → `main` cuando UAT esté completo
 
 ---
@@ -904,10 +988,11 @@ La columna `bloqueado` sigue en la DB pero es inerte. No reimplementar ese siste
 Variables de entorno en Railway: `SMTP_USER` + `SMTP_PASSWORD` (Gmail App Password).
 Sin ellas el log a DB funciona igual, solo no envía mail. No hardcodear credenciales.
 
-### 17. DOCX — monto en palabras: mayúsculas vs minúsculas
-- **`generar_docx_cobro`**: monto en **MAYÚSCULAS** (`_numero_a_palabras(monto)`)
-- **`generar_docx_ejecucion`**: monto en **minúsculas** (`_numero_a_palabras(monto).lower()`)
-  Diferencia dictada por los templates originales (PUNTO 3 vs PUNTO 1).
+### 17. DOCX — tipografía, espaciado y monto en palabras
+- **Fuente**: **Calibri 12pt** en ambos documentos (antes era Arial). Definido en `doc.styles["Normal"].font.name = "Calibri"`.
+- **Interlineado 1.5**: `WD_LINE_SPACING.ONE_POINT_FIVE` aplicado párrafo a párrafo vía helper `_ls(p)`. No se aplica a celdas de tabla.
+- **Cobro**: monto en **MAYÚSCULAS** (`_numero_a_palabras(monto)`)
+- **Ejecución**: monto en **minúsculas** (`_numero_a_palabras(monto).lower()`)
 
 ### 18. `log_uso` — no lanza excepciones
 `log_uso()` tiene `try/except` que suprime todo error silenciosamente.
@@ -917,6 +1002,24 @@ Esto es intencional: un fallo de tracking nunca debe romper la descarga del usua
 Las tablas del DOCX usan `tbl.style = "Table Grid"` para que las líneas aparezcan visibles
 al abrir en Word/LibreOffice. Sin ese estilo la tabla se ve sin bordes.
 Los colores de fondo se aplican con `_docx_shade_cell(cell, "RRGGBB")` (sin #).
+
+### 20. PDF cobro/ejecucion = escrito judicial (no planilla)
+Los botones "Descargar PDF" en cobro y ejecucion llaman a **`generar_pdf_cobro`** y **`generar_pdf_ejecucion_escrito`** respectivamente — no a `exportar_pdf` ni a `exportar_pdf_ejecucion`.
+Esas funciones "planilla" siguen existiendo pero solo las usa ampliacion.
+
+### 21. Nombres de archivo de escritos
+- **Cobro**: `INT M - {APELLIDO}.pdf / .docx` — apellido = `caratula.split(",")[0].strip()`
+- **Ejecución**: `INT1M - {APELLIDO}.pdf / .docx` — ídem
+- Nunca usar el número de expediente como nombre base en estos documentos.
+
+### 22. Carátula — limpieza obligatoria
+`_limpiar_caratula()` elimina `"(agregar/quitar...)"` del campo carátula en todos los escritos.
+`limpiar_expediente()` extrae solo `SIGLA NUMERO/AÑO` del campo expediente.
+Ambas funciones se aplican en la página (display + log) **y** dentro de cada función generadora (garantía doble).
+
+### 23. "Proveer de conformidad," — negrita en cobro
+En `generar_docx_cobro` y `generar_pdf_cobro`: **negrita**. En ejecución: sin negrita (plain text).
+Diferencia dictada por los templates originales.
 
 ---
 
