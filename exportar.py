@@ -1743,13 +1743,22 @@ def generar_docx_ampliacion(
         space_after=6,
     )
     _par("En efecto, la resolución dictada en autos sostuvo expresamente que:", space_after=4)
-    _par_mixed([
-        ('"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
-         'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
-         'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
-         'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"',
-         True, True),
-    ], indent=1.25, space_after=6)
+    p_q = doc.add_paragraph()
+    p_q.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_q.paragraph_format.left_indent = DCm(2.0)
+    p_q.paragraph_format.right_indent = DCm(0.5)
+    p_q.paragraph_format.first_line_indent = Pt(0)
+    p_q.paragraph_format.space_after = Pt(6)
+    _ls(p_q)
+    r_q = p_q.add_run(
+        '"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
+        'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
+        'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
+        'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"'
+    )
+    r_q.bold = True
+    r_q.underline = True
+    r_q.font.size = Pt(12)
     _par_mixed([
         ("Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
          "efectivo pago ", False, False),
@@ -1798,14 +1807,18 @@ def generar_docx_ampliacion(
         ("V.- PETITORIO:", True, False),
         (" Por todo lo expuesto, a V.S. solicito:", False, False),
     ], align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=4)
-    _par(
-        "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
-        space_after=4,
-    )
-    _par(
-        "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
-        space_after=10,
-    )
+    for _txt_li, _sa_li in [
+        ("1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.", 4),
+        ("2. Oportunamente, apruebe la liquidación presentada en todas sus partes.", 10),
+    ]:
+        p_li = doc.add_paragraph()
+        p_li.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p_li.paragraph_format.left_indent = DCm(1.25)
+        p_li.paragraph_format.first_line_indent = Pt(0)
+        p_li.paragraph_format.space_after = Pt(_sa_li)
+        _ls(p_li)
+        r_li = p_li.add_run(_txt_li)
+        r_li.font.size = Pt(12)
 
     # ── Cierre ───────────────────────────────────────────────────────────────
     _par("Proveer de conformidad,", bold=True, indent=0,
@@ -1853,11 +1866,12 @@ def generar_pdf_ampliacion(
     FONT_B = _PDF_FONT_BOLD
     LS     = 18  # 1.5 × 12pt
 
-    def _ps(name, align=4, indent=35, space_after=6) -> ParagraphStyle:
+    def _ps(name, align=4, indent=35, space_after=6, left_indent=0, right_indent=0) -> ParagraphStyle:
         return ParagraphStyle(
             name, fontName=FONT, fontSize=12,
             leading=LS, alignment=align,
             firstLineIndent=indent, spaceAfter=space_after,
+            leftIndent=left_indent, rightIndent=right_indent,
         )
 
     buf = io.BytesIO()
@@ -1971,7 +1985,7 @@ def generar_pdf_ampliacion(
         'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
         'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
         'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"</u></b>',
-        _ps("ap4", indent=70, space_after=6),
+        _ps("ap4", indent=0, left_indent=57, right_indent=14, space_after=6),
     ))
     story.append(Paragraph(
         f"Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
@@ -2038,11 +2052,11 @@ def generar_pdf_ampliacion(
     ))
     story.append(Paragraph(
         "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
-        _ps("av2"),
+        _ps("av2", indent=0, left_indent=35),
     ))
     story.append(Paragraph(
         "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
-        _ps("av3", space_after=12),
+        _ps("av3", indent=0, left_indent=35, space_after=12),
     ))
 
     # Cierre centrado
