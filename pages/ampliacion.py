@@ -10,7 +10,7 @@ import streamlit as st
 from auth import list_abogados, log_calculo, importar_puentes_anio, log_uso, get_session_user
 from bcra import cargar_indice, descargar_indice, fecha_ultimo_dato
 from calculos import calcular_intereses, primer_dia_mes_siguiente
-from exportar import exportar_excel, exportar_pdf, limpiar_expediente
+from exportar import generar_pdf_ampliacion, generar_docx_ampliacion, limpiar_expediente
 from parsear_pdf import parsear_archivo
 
 # ── Sidebar: índice BCRA ────────────────────────────────────────────────────
@@ -268,29 +268,30 @@ if st.session_state.get("amp_resultado") is not None:
         # ── Exportar ──────────────────────────────────────────────────────────
         st.subheader("5. Exportar")
 
-        expediente_num = limpiar_expediente(exp.get("Expediente", ""))
-        nombre_base = expediente_num.replace("/", "-") or "liquidacion"
+        expediente_num  = limpiar_expediente(exp.get("Expediente", ""))
+        _uname_amp      = (get_session_user() or {}).get("username", "desconocido")
+        _caratula_amp   = exp.get("Carátula", exp.get("Caratula", ""))
+        _apellido_amp   = _caratula_amp.split(",")[0].strip() if _caratula_amp else "liquidacion"
+        _nombre_doc_amp = f"INT2M - {_apellido_amp}"
 
-        _uname_amp = (get_session_user() or {}).get("username", "desconocido")
-
-        col_xl, col_pdf = st.columns(2)
-        with col_xl:
-            xlsx_bytes = exportar_excel(df_ok)
-            if st.download_button(
-                "⬇ Descargar Excel",
-                data=xlsx_bytes,
-                file_name=f"ampliacion_{nombre_base}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            ):
-                log_uso(_uname_amp, "ampliacion", "excel")
+        col_pdf, col_docx = st.columns(2)
         with col_pdf:
-            pdf_bytes = exportar_pdf(df_ok)
+            pdf_bytes = generar_pdf_ampliacion(df_ok, abogado, _caratula_amp, expediente_num)
             if st.download_button(
                 "⬇ Descargar PDF",
                 data=pdf_bytes,
-                file_name=f"ampliacion_{nombre_base}.pdf",
+                file_name=f"{_nombre_doc_amp}.pdf",
                 mime="application/pdf",
                 use_container_width=True,
             ):
                 log_uso(_uname_amp, "ampliacion", "pdf")
+        with col_docx:
+            docx_bytes = generar_docx_ampliacion(df_ok, abogado, _caratula_amp, expediente_num)
+            if st.download_button(
+                "⬇ Descargar Word",
+                data=docx_bytes,
+                file_name=f"{_nombre_doc_amp}.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                use_container_width=True,
+            ):
+                log_uso(_uname_amp, "ampliacion", "docx")

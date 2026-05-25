@@ -1570,3 +1570,486 @@ def generar_pdf_ejecucion_escrito(
 
     doc_pdf.build(story)
     return buf.getvalue()
+
+
+# ── Ampliación de Ejecución — DOCX (Escrito judicial) ─────────────────────────
+
+def generar_docx_ampliacion(
+    df_ok: "pd.DataFrame",
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial DOCX — Ampliación de Ejecución (PASO #2)."""
+
+    # ── Datos ────────────────────────────────────────────────────────────────
+    caratula   = _limpiar_caratula(caratula)
+    expediente = limpiar_expediente(expediente)
+
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+
+    t_cap = float(df_ok["capital"].sum())
+    t_int = float(df_ok["interes"].sum())
+    t_tot = float(df_ok["total"].sum())
+
+    monto_palabras = _numero_a_palabras(t_int).lower()
+    monto_numero   = _fmt(t_int)
+
+    fecha_pago = df_ok["fecha_pago"].iloc[0] if "fecha_pago" in df_ok.columns else None
+    fecha_pago_str = (
+        fecha_pago.strftime("%d/%m/%Y")
+        if fecha_pago is not None and hasattr(fecha_pago, "strftime")
+        else str(fecha_pago) if fecha_pago is not None else ""
+    )
+
+    # ── Documento ────────────────────────────────────────────────────────────
+    doc = Document()
+    sec = doc.sections[0]
+    sec.page_width    = DCm(21.0)
+    sec.page_height   = DCm(29.7)
+    sec.left_margin   = DCm(3.0)
+    sec.right_margin  = DCm(2.0)
+    sec.top_margin    = DCm(2.5)
+    sec.bottom_margin = DCm(2.5)
+    doc.styles["Normal"].font.name = "Calibri"
+    doc.styles["Normal"].font.size = Pt(12)
+
+    def _ls(p) -> None:
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
+
+    def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+                   indent: float = 1.25, space_after: float = 6) -> None:
+        p = doc.add_paragraph()
+        p.alignment = align
+        p.paragraph_format.first_line_indent = DCm(indent)
+        p.paragraph_format.space_after = Pt(space_after)
+        _ls(p)
+        for text, bold, underline in parts:
+            r = p.add_run(text)
+            r.bold = bold
+            r.underline = underline
+            r.font.size = Pt(12)
+
+    def _par(text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
+             indent: float = 1.25, space_after: float = 6) -> None:
+        _par_mixed([(text, bold, False)], align=align, indent=indent, space_after=space_after)
+
+    def _section(num: str, titulo: str, space_after: float = 4) -> None:
+        _par_mixed([(f"{num} {titulo}", True, False)],
+                   align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=space_after)
+
+    def _subsection(letra: str, titulo: str) -> None:
+        _par_mixed([(f"{letra} {titulo}", True, False)],
+                   align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=4)
+
+    def _spacer(pt: float = 4) -> None:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_after = Pt(pt)
+        p.paragraph_format.space_before = Pt(0)
+
+    # ── TÍTULO ───────────────────────────────────────────────────────────────
+    p_tit = doc.add_paragraph()
+    p_tit.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_tit.paragraph_format.first_line_indent = DCm(0)
+    p_tit.paragraph_format.space_after = Pt(8)
+    _ls(p_tit)
+    r = p_tit.add_run("PRACTICA AMPLIACION DE INTERESES MORATORIOS")
+    r.bold = True
+    r.underline = True
+    r.font.size = Pt(12)
+
+    # ── SEÑOR JUEZ FEDERAL ───────────────────────────────────────────────────
+    p_juez = doc.add_paragraph()
+    p_juez.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    p_juez.paragraph_format.first_line_indent = DCm(0)
+    p_juez.paragraph_format.space_after = Pt(6)
+    _ls(p_juez)
+    rj = p_juez.add_run("SEÑOR JUEZ FEDERAL:")
+    rj.bold = True
+    rj.font.size = Pt(12)
+
+    # ── Letrado + carátula ───────────────────────────────────────────────────
+    p_intro = doc.add_paragraph()
+    p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p_intro.paragraph_format.first_line_indent = DCm(1.25)
+    p_intro.paragraph_format.space_after = Pt(10)
+    _ls(p_intro)
+    for text, bold in [
+        (nombre_letrado, True),
+        (f', CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: "', False),
+        (f"{caratula} - EXPTE. {expediente}", True),
+        ('", con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:', False),
+    ]:
+        ri = p_intro.add_run(text)
+        ri.bold = bold
+        ri.font.size = Pt(12)
+
+    # ── I.- OBJETO ───────────────────────────────────────────────────────────
+    _section("I.-", "OBJETO")
+    _par(
+        'Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de '
+        'intereses moratorios, practicada conforme los lineamientos expresamente establecidos '
+        'por V.S. en Fallo "VEGA", solicitando oportunamente su aprobación.',
+        space_after=10,
+    )
+
+    # ── II.- CUMPLIMIENTO ────────────────────────────────────────────────────
+    _section("II.-", 'CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"')
+    _par(
+        "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
+        "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
+        space_after=6,
+    )
+    _par("En tal sentido, se procedió a distinguir expresamente:", space_after=6)
+
+    _subsection("A)", "Períodos anteriores al vencimiento del plazo de 120 días")
+    _par(
+        "Respecto de los períodos comprendidos con anterioridad al vencimiento del plazo legal "
+        "de ciento veinte (120) días hábiles para el cumplimiento de la sentencia, se determinó "
+        "el retroactivo correspondiente por las diferencias devengadas hasta el día 120.",
+        space_after=6,
+    )
+    _par(
+        "Posteriormente, sobre el monto total resultante, se calcularon intereses moratorios "
+        "aplicando la tasa pasiva promedio del BCRA desde el día 121 —momento de constitución "
+        "automática en mora conforme art. 886 CCCN— y hasta la fecha de efectiva transferencia "
+        "del embargo.",
+        space_after=6,
+    )
+
+    _subsection("B)", "Períodos posteriores al vencimiento del plazo de 120 días")
+    _par(
+        "Asimismo, para los períodos posteriores al vencimiento del referido plazo, se "
+        "individualizó cada diferencia mensual devengada y se calcularon los intereses moratorios "
+        "correspondientes desde que cada suma fue debida y hasta la fecha de transferencia del "
+        "embargo.",
+        space_after=6,
+    )
+    _par(
+        "De este modo, la metodología aplicada recepta íntegramente los parámetros fijados "
+        "por V.S., respetando la diferenciación temporal expresamente establecida en la "
+        "resolución dictada.",
+        space_after=10,
+    )
+
+    # ── III.- PROCEDENCIA ────────────────────────────────────────────────────
+    _section("III.-", "PROCEDENCIA DE LOS INTERESES MORATORIOS")
+    _par(
+        "Cabe destacar que V.S. ya ha reconocido expresamente la procedencia de los intereses "
+        "moratorios reclamados, dejando establecido que la ANSES incurrió en mora automática "
+        "una vez vencido el plazo de ciento veinte (120) días hábiles previsto para el "
+        "cumplimiento de la sentencia.",
+        space_after=6,
+    )
+    _par("En efecto, la resolución dictada en autos sostuvo expresamente que:", space_after=4)
+    _par_mixed([
+        ('"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
+         'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
+         'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
+         'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"',
+         True, True),
+    ], indent=1.25, space_after=6)
+    _par_mixed([
+        ("Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
+         "efectivo pago ", False, False),
+        (f"({fecha_pago_str})", True, False),
+        (", extremo que ha sido debidamente respetado en la liquidación acompañada.", False, False),
+    ], space_after=10)
+
+    # ── IV.- PLANILLA ────────────────────────────────────────────────────────
+    _section("IV.-", "PLANILLA – ACOMPAÑA")
+    _par_mixed([
+        ("Que se acompaña planilla de ampliación de intereses moratorios confeccionada "
+         "conforme las pautas indicadas por V.S., discriminando períodos, capitales, fechas de "
+         "mora, tasa aplicada y monto resultante, a saber de ", False, False),
+        (f"pesos {monto_palabras} ($ {monto_numero})", True, False),
+        (".", False, False),
+    ], space_after=8)
+
+    n_rows = 1 + len(df_ok) + 1
+    tbl = doc.add_table(rows=n_rows, cols=8)
+    tbl.style = "Table Grid"
+    _docx_set_col_widths(tbl, [1.8, 2.2, 1.8, 1.9, 1.9, 2.1, 2.2, 2.1])
+    _docx_add_table_header(tbl, [
+        "Período", "Capital ($)", "Int. desde",
+        "Índ. inicial", "Índ. final", "Coeficiente",
+        "Interés ($)", "Total ($)",
+    ])
+    for i, (_, row) in enumerate(df_ok.iterrows(), start=1):
+        _docx_add_data_row(tbl, i, [
+            row["periodo"],
+            f"$ {_fmt(row['capital'])}",
+            row["fecha_desde"].strftime("%d/%m/%Y"),
+            f"{row['indice_inicial']:,.4f}",
+            f"{row['indice_final']:,.4f}",
+            f"{row['coeficiente']:.6f}",
+            f"$ {_fmt(row['interes'])}",
+            f"$ {_fmt(row['total'])}",
+        ])
+    _docx_add_data_row(tbl, n_rows - 1, [
+        "TOTAL", f"$ {_fmt(t_cap)}", "", "", "", "",
+        f"$ {_fmt(t_int)}", f"$ {_fmt(t_tot)}",
+    ], bold=True, fill="FEF3CD")
+    _spacer(10)
+
+    # ── V.- PETITORIO ────────────────────────────────────────────────────────
+    _par_mixed([
+        ("V.- PETITORIO:", True, False),
+        (" Por todo lo expuesto, a V.S. solicito:", False, False),
+    ], align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=4)
+    _par(
+        "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
+        space_after=4,
+    )
+    _par(
+        "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
+        space_after=10,
+    )
+
+    # ── Cierre ───────────────────────────────────────────────────────────────
+    _par("Proveer de conformidad,", bold=True, indent=0,
+         align=WD_ALIGN_PARAGRAPH.CENTER, space_after=4)
+    _par("SERÁ JUSTICIA.", bold=True, indent=0,
+         align=WD_ALIGN_PARAGRAPH.CENTER, space_after=0)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+# ── Ampliación de Ejecución — PDF (Escrito judicial) ──────────────────────────
+
+def generar_pdf_ampliacion(
+    df_ok: "pd.DataFrame",
+    letrado: dict,
+    caratula: str,
+    expediente: str,
+) -> bytes:
+    """Genera escrito judicial en PDF — Ampliación de Ejecución (PASO #2)."""
+    from xml.sax.saxutils import escape as _xe
+
+    caratula   = _limpiar_caratula(caratula)
+    expediente = limpiar_expediente(expediente)
+
+    nombre_letrado = letrado.get("nombre_completo", "").upper()
+    cuil_letrado   = letrado.get("cuil", "")
+
+    t_cap = float(df_ok["capital"].sum())
+    t_int = float(df_ok["interes"].sum())
+    t_tot = float(df_ok["total"].sum())
+
+    monto_palabras = _numero_a_palabras(t_int).lower()
+    monto_numero   = _fmt(t_int)
+
+    fecha_pago = df_ok["fecha_pago"].iloc[0] if "fecha_pago" in df_ok.columns else None
+    fecha_pago_str = (
+        fecha_pago.strftime("%d/%m/%Y")
+        if fecha_pago is not None and hasattr(fecha_pago, "strftime")
+        else str(fecha_pago) if fecha_pago is not None else ""
+    )
+
+    FONT   = _PDF_FONT
+    FONT_B = _PDF_FONT_BOLD
+    LS     = 18  # 1.5 × 12pt
+
+    def _ps(name, align=4, indent=35, space_after=6) -> ParagraphStyle:
+        return ParagraphStyle(
+            name, fontName=FONT, fontSize=12,
+            leading=LS, alignment=align,
+            firstLineIndent=indent, spaceAfter=space_after,
+        )
+
+    buf = io.BytesIO()
+    doc_pdf = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=3 * cm, rightMargin=2 * cm,
+        topMargin=2.5 * cm, bottomMargin=2.5 * cm,
+    )
+    story = []
+
+    # Título
+    story.append(Paragraph(
+        "<b><u>PRACTICA AMPLIACION DE INTERESES MORATORIOS</u></b>",
+        _ps("at", align=1, indent=0, space_after=12),
+    ))
+
+    # SEÑOR JUEZ FEDERAL
+    story.append(Paragraph(
+        "<b>SEÑOR JUEZ FEDERAL:</b>",
+        _ps("aj", align=0, indent=0, space_after=10),
+    ))
+
+    # Letrado + carátula
+    story.append(Paragraph(
+        f'<b>{_xe(nombre_letrado)}</b>'
+        f', CUIL {_xe(cuil_letrado)}, abogado, con personería acreditada en autos '
+        f'caratulados: "<b>{_xe(caratula)} - EXPTE. {_xe(expediente)}</b>", '
+        f'con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:',
+        _ps("ai", space_after=10),
+    ))
+
+    # I.- OBJETO
+    story.append(Paragraph(
+        '<b>I.-</b> OBJETO',
+        _ps("ao1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        'Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de '
+        'intereses moratorios, practicada conforme los lineamientos expresamente establecidos '
+        'por V.S. en Fallo "VEGA", solicitando oportunamente su aprobación.',
+        _ps("ao2", space_after=10),
+    ))
+
+    # II.- CUMPLIMIENTO
+    story.append(Paragraph(
+        '<b>II.-</b> CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"',
+        _ps("ac1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
+        "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
+        _ps("ac2"),
+    ))
+    story.append(Paragraph(
+        "En tal sentido, se procedió a distinguir expresamente:",
+        _ps("ac3", space_after=6),
+    ))
+    story.append(Paragraph(
+        "<b>A) Períodos anteriores al vencimiento del plazo de 120 días</b>",
+        _ps("aa1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "Respecto de los períodos comprendidos con anterioridad al vencimiento del plazo legal "
+        "de ciento veinte (120) días hábiles para el cumplimiento de la sentencia, se determinó "
+        "el retroactivo correspondiente por las diferencias devengadas hasta el día 120.",
+        _ps("aa2"),
+    ))
+    story.append(Paragraph(
+        "Posteriormente, sobre el monto total resultante, se calcularon intereses moratorios "
+        "aplicando la tasa pasiva promedio del BCRA desde el día 121 —momento de constitución "
+        "automática en mora conforme art. 886 CCCN— y hasta la fecha de efectiva transferencia "
+        "del embargo.",
+        _ps("aa3"),
+    ))
+    story.append(Paragraph(
+        "<b>B) Períodos posteriores al vencimiento del plazo de 120 días</b>",
+        _ps("ab1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "Asimismo, para los períodos posteriores al vencimiento del referido plazo, se "
+        "individualizó cada diferencia mensual devengada y se calcularon los intereses moratorios "
+        "correspondientes desde que cada suma fue debida y hasta la fecha de transferencia del "
+        "embargo.",
+        _ps("ab2"),
+    ))
+    story.append(Paragraph(
+        "De este modo, la metodología aplicada recepta íntegramente los parámetros fijados "
+        "por V.S., respetando la diferenciación temporal expresamente establecida en la "
+        "resolución dictada.",
+        _ps("ab3", space_after=10),
+    ))
+
+    # III.- PROCEDENCIA
+    story.append(Paragraph(
+        "<b>III.-</b> PROCEDENCIA DE LOS INTERESES MORATORIOS",
+        _ps("ap1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "Cabe destacar que V.S. ya ha reconocido expresamente la procedencia de los intereses "
+        "moratorios reclamados, dejando establecido que la ANSES incurrió en mora automática "
+        "una vez vencido el plazo de ciento veinte (120) días hábiles previsto para el "
+        "cumplimiento de la sentencia.",
+        _ps("ap2"),
+    ))
+    story.append(Paragraph(
+        "En efecto, la resolución dictada en autos sostuvo expresamente que:",
+        _ps("ap3", space_after=4),
+    ))
+    story.append(Paragraph(
+        '<b><u>"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
+        'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
+        'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
+        'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"</u></b>',
+        _ps("ap4", indent=70, space_after=6),
+    ))
+    story.append(Paragraph(
+        f"Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
+        f"efectivo pago <b>({_xe(fecha_pago_str)})</b>, extremo que ha sido debidamente "
+        f"respetado en la liquidación acompañada.",
+        _ps("ap5", space_after=10),
+    ))
+
+    # IV.- PLANILLA
+    story.append(Paragraph(
+        "<b>IV.-</b> PLANILLA – ACOMPAÑA",
+        _ps("apl1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "Que se acompaña planilla de ampliación de intereses moratorios confeccionada "
+        "conforme las pautas indicadas por V.S., discriminando períodos, capitales, fechas de "
+        f"mora, tasa aplicada y monto resultante, a saber de "
+        f"<b>pesos {_xe(monto_palabras)} ($ {_xe(monto_numero)})</b>.",
+        _ps("apl2", space_after=8),
+    ))
+
+    _col_w = [w * cm for w in [1.8, 2.2, 1.8, 1.9, 1.9, 2.1, 2.2, 2.1]]
+    _headers = ["Período", "Capital ($)", "Int. desde",
+                "Índ. inicial", "Índ. final", "Coeficiente",
+                "Interés ($)", "Total ($)"]
+    rows_tbl = [_headers]
+    for _, row in df_ok.iterrows():
+        rows_tbl.append([
+            row["periodo"],
+            f"$ {_fmt(row['capital'])}",
+            row["fecha_desde"].strftime("%d/%m/%Y"),
+            f"{row['indice_inicial']:,.4f}",
+            f"{row['indice_final']:,.4f}",
+            f"{row['coeficiente']:.6f}",
+            f"$ {_fmt(row['interes'])}",
+            f"$ {_fmt(row['total'])}",
+        ])
+    rows_tbl.append([
+        "TOTAL", f"$ {_fmt(t_cap)}", "", "", "", "",
+        f"$ {_fmt(t_int)}", f"$ {_fmt(t_tot)}",
+    ])
+    t_planilla = Table(rows_tbl, colWidths=_col_w, repeatRows=1)
+    t_planilla.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#1E3A5F")),
+        ("TEXTCOLOR",      (0, 0),  (-1, 0),  colors.white),
+        ("FONTNAME",       (0, 0),  (-1, 0),  FONT_B),
+        ("FONTSIZE",       (0, 0),  (-1, -1), 8),
+        ("ALIGN",          (0, 0),  (-1, -1), "CENTER"),
+        ("ROWBACKGROUNDS", (0, 1),  (-1, -2), [colors.white, colors.HexColor("#eef2f7")]),
+        ("BACKGROUND",     (0, -1), (-1, -1), colors.HexColor("#fef3cd")),
+        ("FONTNAME",       (0, -1), (-1, -1), FONT_B),
+        ("GRID",           (0, 0),  (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("VALIGN",         (0, 0),  (-1, -1), "MIDDLE"),
+        ("TOPPADDING",     (0, 0),  (-1, -1), 3),
+        ("BOTTOMPADDING",  (0, 0),  (-1, -1), 3),
+    ]))
+    story.append(t_planilla)
+    story.append(Spacer(1, 0.5 * cm))
+
+    # V.- PETITORIO
+    story.append(Paragraph(
+        "<b>V.- PETITORIO:</b> Por todo lo expuesto, a V.S. solicito:",
+        _ps("av1", align=1, indent=0),
+    ))
+    story.append(Paragraph(
+        "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
+        _ps("av2"),
+    ))
+    story.append(Paragraph(
+        "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
+        _ps("av3", space_after=12),
+    ))
+
+    # Cierre centrado
+    story.append(Paragraph("<b>Proveer de conformidad,</b>",
+                           _ps("acc", align=1, indent=0, space_after=4)))
+    story.append(Paragraph("<b>SERÁ JUSTICIA.</b>",
+                           _ps("acj", align=1, indent=0, space_after=0)))
+
+    doc_pdf.build(story)
+    return buf.getvalue()
