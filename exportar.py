@@ -1603,13 +1603,17 @@ def generar_docx_ampliacion(
         else str(fecha_pago) if fecha_pago is not None else ""
     )
 
+    # Comillas tipográficas (curly quotes) — igual que el template Word
+    QO = "“"  # "
+    QC = "”"  # "
+
     # ── Documento ────────────────────────────────────────────────────────────
     doc = Document()
     sec = doc.sections[0]
     sec.page_width    = DCm(21.0)
     sec.page_height   = DCm(29.7)
     sec.left_margin   = DCm(3.0)
-    sec.right_margin  = DCm(2.0)
+    sec.right_margin  = DCm(3.0)   # simétrico: igual que el template
     sec.top_margin    = DCm(2.5)
     sec.bottom_margin = DCm(2.5)
     doc.styles["Normal"].font.name = "Calibri"
@@ -1619,7 +1623,8 @@ def generar_docx_ampliacion(
         p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.ONE_POINT_FIVE
 
     def _par_mixed(parts: list, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-                   indent: float = 1.25, space_after: float = 6) -> None:
+                   indent: float = 2.5, space_after: float = 6) -> None:
+        """Párrafo con runs de distinto formato. indent = sangría primera línea en cm."""
         p = doc.add_paragraph()
         p.alignment = align
         p.paragraph_format.first_line_indent = DCm(indent)
@@ -1632,16 +1637,18 @@ def generar_docx_ampliacion(
             r.font.size = Pt(12)
 
     def _par(text: str, bold: bool = False, align=WD_ALIGN_PARAGRAPH.JUSTIFY,
-             indent: float = 1.25, space_after: float = 6) -> None:
+             indent: float = 2.5, space_after: float = 6) -> None:
         _par_mixed([(text, bold, False)], align=align, indent=indent, space_after=space_after)
 
     def _section(num: str, titulo: str, space_after: float = 4) -> None:
+        """Título de sección: justificado, sangría 2.5 cm, negrita."""
         _par_mixed([(f"{num} {titulo}", True, False)],
-                   align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=space_after)
+                   align=WD_ALIGN_PARAGRAPH.JUSTIFY, indent=2.5, space_after=space_after)
 
     def _subsection(letra: str, titulo: str) -> None:
+        """Subtítulo A)/B): justificado, sangría 2.5 cm, negrita."""
         _par_mixed([(f"{letra} {titulo}", True, False)],
-                   align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=4)
+                   align=WD_ALIGN_PARAGRAPH.JUSTIFY, indent=2.5, space_after=4)
 
     def _spacer(pt: float = 4) -> None:
         p = doc.add_paragraph()
@@ -1672,14 +1679,14 @@ def generar_docx_ampliacion(
     # ── Letrado + carátula ───────────────────────────────────────────────────
     p_intro = doc.add_paragraph()
     p_intro.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    p_intro.paragraph_format.first_line_indent = DCm(1.25)
+    p_intro.paragraph_format.first_line_indent = DCm(2.5)
     p_intro.paragraph_format.space_after = Pt(10)
     _ls(p_intro)
     for text, bold in [
         (nombre_letrado, True),
-        (f', CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: "', False),
+        (f", CUIL {cuil_letrado}, abogado, con personería acreditada en autos caratulados: {QO}", False),
         (f"{caratula} - EXPTE. {expediente}", True),
-        ('", con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:', False),
+        (f"{QC}, con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:", False),
     ]:
         ri = p_intro.add_run(text)
         ri.bold = bold
@@ -1688,14 +1695,16 @@ def generar_docx_ampliacion(
     # ── I.- OBJETO ───────────────────────────────────────────────────────────
     _section("I.-", "OBJETO")
     _par(
-        'Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de '
-        'intereses moratorios, practicada conforme los lineamientos expresamente establecidos '
-        'por V.S. en Fallo "VEGA", solicitando oportunamente su aprobación.',
+        f"Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de "
+        f"intereses moratorios, practicada conforme los lineamientos expresamente establecidos "
+        f"por V.S. en Fallo {QO}VEGA{QC}, solicitando oportunamente su aprobación.",
         space_after=10,
     )
 
     # ── II.- CUMPLIMIENTO ────────────────────────────────────────────────────
-    _section("II.-", 'CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"')
+    _section("II.-",
+             f"CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN {QO}FALLO VEGA{QC} "
+             f"y {QO}RASTRILLA{QC}")
     _par(
         "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
         "la metodología ordenada por V.S. en el considerando VII del decisorio referido.",
@@ -1743,22 +1752,17 @@ def generar_docx_ampliacion(
         space_after=6,
     )
     _par("En efecto, la resolución dictada en autos sostuvo expresamente que:", space_after=4)
-    p_q = doc.add_paragraph()
-    p_q.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    p_q.paragraph_format.left_indent = DCm(2.0)
-    p_q.paragraph_format.right_indent = DCm(0.5)
-    p_q.paragraph_format.first_line_indent = Pt(0)
-    p_q.paragraph_format.space_after = Pt(6)
-    _ls(p_q)
-    r_q = p_q.add_run(
-        '"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
-        'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
-        'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
-        'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"'
-    )
-    r_q.bold = True
-    r_q.underline = True
-    r_q.font.size = Pt(12)
+
+    # Cita textual: apertura normal + parte central en negrita+subrayado + cierre normal
+    _par_mixed([
+        (f"{QO}Por los periodos posteriores al vencimiento del plazo establecido en la "
+         "sentencia de fondo para su cumplimiento (a partir del día 121), ", False, False),
+        ("se deberán determinar las diferencias surgidas en cada mensual y proceder al cálculo "
+         "de los intereses moratorios correspondientes desde que cada uno fue debido hasta la "
+         "fecha de transferencia del embargo", True, True),
+        (f"{QC}", False, False),
+    ], space_after=6)
+
     _par_mixed([
         ("Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
          "efectivo pago ", False, False),
@@ -1806,19 +1810,11 @@ def generar_docx_ampliacion(
     _par_mixed([
         ("V.- PETITORIO:", True, False),
         (" Por todo lo expuesto, a V.S. solicito:", False, False),
-    ], align=WD_ALIGN_PARAGRAPH.CENTER, indent=0, space_after=4)
-    for _txt_li, _sa_li in [
-        ("1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.", 4),
-        ("2. Oportunamente, apruebe la liquidación presentada en todas sus partes.", 10),
-    ]:
-        p_li = doc.add_paragraph()
-        p_li.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        p_li.paragraph_format.left_indent = DCm(1.25)
-        p_li.paragraph_format.first_line_indent = Pt(0)
-        p_li.paragraph_format.space_after = Pt(_sa_li)
-        _ls(p_li)
-        r_li = p_li.add_run(_txt_li)
-        r_li.font.size = Pt(12)
+    ], align=WD_ALIGN_PARAGRAPH.JUSTIFY, indent=2.5, space_after=4)
+    _par("1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios "
+         "practicada.", space_after=4)
+    _par("2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
+         space_after=10)
 
     # ── Cierre ───────────────────────────────────────────────────────────────
     _par("Proveer de conformidad,", bold=True, indent=0,
