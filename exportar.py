@@ -1862,18 +1862,26 @@ def generar_pdf_ampliacion(
     FONT_B = _PDF_FONT_BOLD
     LS     = 18  # 1.5 × 12pt
 
-    def _ps(name, align=4, indent=35, space_after=6, left_indent=0, right_indent=0) -> ParagraphStyle:
+    # 2.5 cm en puntos (sangría de cuerpo, igual que el DOCX)
+    IND = 2.5 * cm
+
+    # Comillas tipográficas (curly quotes)
+    QO = "“"
+    QC = "”"
+
+    def _ps(name, align=4, indent=None, space_after=6) -> ParagraphStyle:
+        """align: 0=left 1=center 2=right 4=justify. indent=None → IND (2.5 cm)."""
         return ParagraphStyle(
             name, fontName=FONT, fontSize=12,
             leading=LS, alignment=align,
-            firstLineIndent=indent, spaceAfter=space_after,
-            leftIndent=left_indent, rightIndent=right_indent,
+            firstLineIndent=(IND if indent is None else indent),
+            spaceAfter=space_after,
         )
 
     buf = io.BytesIO()
     doc_pdf = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=3 * cm, rightMargin=2 * cm,
+        leftMargin=3 * cm, rightMargin=3 * cm,   # simétrico, igual que el DOCX
         topMargin=2.5 * cm, bottomMargin=2.5 * cm,
     )
     story = []
@@ -1894,7 +1902,7 @@ def generar_pdf_ampliacion(
     story.append(Paragraph(
         f'<b>{_xe(nombre_letrado)}</b>'
         f', CUIL {_xe(cuil_letrado)}, abogado, con personería acreditada en autos '
-        f'caratulados: "<b>{_xe(caratula)} - EXPTE. {_xe(expediente)}</b>", '
+        f'caratulados: {QO}<b>{_xe(caratula)} - EXPTE. {_xe(expediente)}</b>{QC}, '
         f'con domicilio legal y electrónico constituido, a V.S. respetuosamente digo:',
         _ps("ai", space_after=10),
     ))
@@ -1902,19 +1910,20 @@ def generar_pdf_ampliacion(
     # I.- OBJETO
     story.append(Paragraph(
         '<b>I.-</b> OBJETO',
-        _ps("ao1", align=1, indent=0),
+        _ps("ao1"),
     ))
     story.append(Paragraph(
-        'Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de '
-        'intereses moratorios, practicada conforme los lineamientos expresamente establecidos '
-        'por V.S. en Fallo "VEGA", solicitando oportunamente su aprobación.',
+        f'Que vengo en legal tiempo y forma a acompañar nueva planilla de liquidación de '
+        f'intereses moratorios, practicada conforme los lineamientos expresamente establecidos '
+        f'por V.S. en Fallo {QO}VEGA{QC}, solicitando oportunamente su aprobación.',
         _ps("ao2", space_after=10),
     ))
 
     # II.- CUMPLIMIENTO
     story.append(Paragraph(
-        '<b>II.-</b> CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN "FALLO VEGA" y "RASTRILLA"',
-        _ps("ac1", align=1, indent=0),
+        f'<b>II.-</b> CUMPLIMIENTO DE LOS LINEAMIENTOS ESTABLECIDOS EN '
+        f'{QO}FALLO VEGA{QC} y {QO}RASTRILLA{QC}',
+        _ps("ac1"),
     ))
     story.append(Paragraph(
         "Que la nueva liquidación acompañada ha sido confeccionada siguiendo estrictamente "
@@ -1927,7 +1936,7 @@ def generar_pdf_ampliacion(
     ))
     story.append(Paragraph(
         "<b>A) Períodos anteriores al vencimiento del plazo de 120 días</b>",
-        _ps("aa1", align=1, indent=0),
+        _ps("aa1"),
     ))
     story.append(Paragraph(
         "Respecto de los períodos comprendidos con anterioridad al vencimiento del plazo legal "
@@ -1944,7 +1953,7 @@ def generar_pdf_ampliacion(
     ))
     story.append(Paragraph(
         "<b>B) Períodos posteriores al vencimiento del plazo de 120 días</b>",
-        _ps("ab1", align=1, indent=0),
+        _ps("ab1"),
     ))
     story.append(Paragraph(
         "Asimismo, para los períodos posteriores al vencimiento del referido plazo, se "
@@ -1963,7 +1972,7 @@ def generar_pdf_ampliacion(
     # III.- PROCEDENCIA
     story.append(Paragraph(
         "<b>III.-</b> PROCEDENCIA DE LOS INTERESES MORATORIOS",
-        _ps("ap1", align=1, indent=0),
+        _ps("ap1"),
     ))
     story.append(Paragraph(
         "Cabe destacar que V.S. ya ha reconocido expresamente la procedencia de los intereses "
@@ -1976,12 +1985,14 @@ def generar_pdf_ampliacion(
         "En efecto, la resolución dictada en autos sostuvo expresamente que:",
         _ps("ap3", space_after=4),
     ))
+    # Cita: apertura normal + parte central negrita+subrayado + cierre normal — inline con cuerpo
     story.append(Paragraph(
-        '<b><u>"Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
-        'de fondo para su cumplimiento (a partir del día 121), se deberán determinar las '
-        'diferencias surgidas en cada mensual y proceder al cálculo de los intereses moratorios '
-        'correspondientes desde que cada uno fue debido hasta la fecha de transferencia del embargo"</u></b>',
-        _ps("ap4", indent=0, left_indent=57, right_indent=14, space_after=6),
+        f'{QO}Por los periodos posteriores al vencimiento del plazo establecido en la sentencia '
+        f'de fondo para su cumplimiento (a partir del día 121), '
+        f'<b><u>se deberán determinar las diferencias surgidas en cada mensual y proceder al '
+        f'cálculo de los intereses moratorios correspondientes desde que cada uno fue debido '
+        f'hasta la fecha de transferencia del embargo</u></b>{QC}',
+        _ps("ap4", space_after=6),
     ))
     story.append(Paragraph(
         f"Asimismo, V.S. dejó establecido que los mismos deben calcularse hasta la fecha de "
@@ -1993,7 +2004,7 @@ def generar_pdf_ampliacion(
     # IV.- PLANILLA
     story.append(Paragraph(
         "<b>IV.-</b> PLANILLA – ACOMPAÑA",
-        _ps("apl1", align=1, indent=0),
+        _ps("apl1"),
     ))
     story.append(Paragraph(
         "Que se acompaña planilla de ampliación de intereses moratorios confeccionada "
@@ -2044,15 +2055,15 @@ def generar_pdf_ampliacion(
     # V.- PETITORIO
     story.append(Paragraph(
         "<b>V.- PETITORIO:</b> Por todo lo expuesto, a V.S. solicito:",
-        _ps("av1", align=1, indent=0),
+        _ps("av1"),
     ))
     story.append(Paragraph(
         "1. Tenga por acompañada la nueva planilla de liquidación de intereses moratorios practicada.",
-        _ps("av2", indent=0, left_indent=35),
+        _ps("av2", space_after=4),
     ))
     story.append(Paragraph(
         "2. Oportunamente, apruebe la liquidación presentada en todas sus partes.",
-        _ps("av3", indent=0, left_indent=35, space_after=12),
+        _ps("av3", space_after=12),
     ))
 
     # Cierre centrado
